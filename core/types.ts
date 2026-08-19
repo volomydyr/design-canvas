@@ -619,6 +619,19 @@ export type CanvasVerdict = {
 export type CanvasCommentFile = {
   contract: string;
   updatedAt: string;
+  /**
+   * WHICH CANVAS THIS REVIEW BELONGS TO, and it only appears in the file that predates namespaced reviews.
+   *
+   * A review is per canvas: `comments/<slug>.json`. An install reviewed before that was true has a flat
+   * `comments.json`, and the route falls back to it so those notes are never lost. The fallback was unconditional,
+   * which meant EVERY canvas in the project read that one file: a second canvas that had never been reviewed showed
+   * the first one's fifteen comments, and its oracle failed on them.
+   *
+   * So the first write stamps the flat file with the canvas doing the writing, and from then on no other canvas
+   * reads it. A write is the right moment: it means a real review is happening there, where a page load means
+   * somebody opened a tab.
+   */
+  canvas?: string;
   comments: CanvasComment[];
   /**
    * SCREEN IDS THE REVIEWER HAS SEEN, which is the whole of the new-screen mechanism's memory.

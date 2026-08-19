@@ -48,6 +48,8 @@ type Paths = {
   images: string;
   /** The images folder as it is written into a comment, repo-relative, for the agent to open. */
   imagesRel: string;
+  /** The canvas these paths belong to, carried so every write can claim a flat legacy file. */
+  slug: string;
 };
 
 /**
@@ -78,6 +80,7 @@ async function pathsFor(slug: string): Promise<Paths> {
     json: path.join(DIR, "comments", `${slug}.json`),
     images: path.join(DIR, "comments", slug),
     imagesRel: `design-canvas/comments/${slug}`,
+    slug,
   };
   try {
     await fs.access(namespaced.json);
@@ -85,12 +88,23 @@ async function pathsFor(slug: string): Promise<Paths> {
   } catch {
     /* Nothing namespaced yet. */
   }
+  const flat = path.join(DIR, "comments.json");
   try {
-    await fs.access(path.join(DIR, "comments.json"));
+    /**
+     * AND IT IS ONLY THIS CANVAS'S FALLBACK IF NOBODY ELSE HAS CLAIMED IT.
+     *
+     * Unconditional, this handed every canvas in the project the same review. A second canvas, never reviewed,
+     * drew the first one's comment count in its Hand Off badge and failed its own oracle on comments about screens
+     * it does not declare. The claim is written by the first WRITE (see `stamp` in the handlers below), so a canvas
+     * that has actually been reviewed keeps its notes and every other canvas starts empty, which is the truth.
+     */
+    const raw = JSON.parse(await fs.readFile(flat, "utf8")) as CanvasCommentFile;
+    if (raw.canvas && raw.canvas !== slug) return namespaced;
     return {
-      json: path.join(DIR, "comments.json"),
+      json: flat,
       images: path.join(DIR, "comments"),
       imagesRel: "design-canvas/comments",
+      slug,
     };
   } catch {
     return namespaced;
@@ -343,9 +357,16 @@ async function writeFile(
   /* CARRIED, NEVER DROPPED. `seen` is the reviewer's other state in this file (see `CanvasCommentFile.seen`), and
      every comment write goes through here: forgetting it once would make every screen new again. */
   const existing = seen ?? (await readFile(paths)).seen;
+  /* THE CLAIM, written once and then carried. Only on the flat file: a namespaced one says which canvas it is by
+     its own name, and stamping it would be a second copy of the same fact that could disagree with the first. */
+  const flat = paths.json === path.join(DIR, "comments.json");
+  const claimed = flat
+    ? (((await readFile(paths)) as CanvasCommentFile).canvas ?? paths.slug)
+    : undefined;
   const file: CanvasCommentFile = {
     contract: CONTRACT,
     updatedAt: new Date().toISOString(),
+    ...(claimed ? { canvas: claimed } : {}),
     comments,
     ...(existing && existing.length > 0 ? { seen: existing } : {}),
   };
