@@ -468,6 +468,38 @@ for (const screen of screens) {
     failures.push(
       `${screen.id}: asked for a ${screen.viewport.w}px viewport and its picture is ${shot.w}px wide`,
     );
+  /**
+   * ONE DEFINED SIZE PER DEVICE, AND HEIGHT IS THE PAGE'S TO DECIDE.
+   *
+   * The rule the owner stated, and it was already half-enforced: *"for all the desktop screens, we need a
+   * defined size … like 1440x900 if it's not a page that has more content and available under the scroll, and
+   * if it does and the screenshot requires it to show more than just 900 pixels of height, then it should
+   * definitely make it longer, like screenshot the whole page. And we need to make it a clear rule."*
+   *
+   * The capture has always done that part: a page inside `LONG_PAGE_SLACK` of the viewport is photographed at
+   * exactly one viewport, and one that genuinely runs past the fold is photographed whole. What defeated it
+   * was a per-screen viewport that kept the canvas's WIDTH and only raised its HEIGHT — which is not a device,
+   * it is padding, and it made every frame in a group 200px taller than any real window. It went unnoticed for
+   * two rounds of review because the check above deliberately ignores height. The owner found it by eye:
+   * *"it's for some reason big. like it does not look like a typical viewport that we use for capturing
+   * desktop screenshots."*
+   *
+   * So: a screen may name a different DEVICE, which means a different width — a phone among desktop frames is
+   * exactly what that is for. Keeping the width and stretching the height is refused, and the failure says
+   * what the page actually measured, because the fix is usually to delete the override.
+   */
+  else if (
+    shot &&
+    screen.viewport?.h &&
+    screen.viewport.w === manifest.viewport.w &&
+    screen.viewport.h !== manifest.viewport.h
+  )
+    failures.push(
+      `${screen.id}: its own viewport is ${screen.viewport.w}x${screen.viewport.h}, the same width as the ` +
+        `canvas at a different height, which pads the frame rather than naming a device. Its picture came ` +
+        `out ${shot.w}x${shot.h}${shot.wholePage ? " (a whole-page shot)" : " (one viewport)"}. Delete the ` +
+        `override and let the page decide: a page that runs past the fold is captured whole on its own.`,
+    );
 }
 console.log(
   `${screens.length} pictures load on the canvas at their captured size`,

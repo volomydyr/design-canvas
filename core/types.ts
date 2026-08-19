@@ -90,7 +90,20 @@ export type CanvasScreen = {
    * match. It is asserted, so a selector that stops matching fails the capture.
    */
   focus?: string;
-  /** Renders this one screen at a different viewport, e.g. a phone surface among desktop ones. */
+  /**
+   * Renders this one screen at a different viewport, e.g. a phone surface among desktop ones.
+   *
+   * A DEVICE, NEVER PADDING, and the oracle enforces the difference. The owner's rule: *"for all the desktop
+   * screens, we need a defined size … like 1440x900 if it's not a page that has more content and available
+   * under the scroll, and if it does and the screenshot requires it to show more than just 900 pixels of
+   * height, then it should definitely make it longer, like screenshot the whole page."*
+   *
+   * So height is the PAGE'S to decide: the capture photographs one viewport when the page fits inside
+   * `LONG_PAGE_SLACK` of it, and the whole page when it genuinely runs past the fold. Naming a viewport here
+   * that keeps the canvas's width and only raises its height is refused by `check-canvas.mjs`, because it pads
+   * every frame in the group past any real window — which is how a whole group of frames sat 200px too tall
+   * through two rounds of review before anyone noticed.
+   */
   viewport?: CanvasViewport;
   /**
    * The files this screen is BUILT FROM, repo-relative: its route file first, then the component that owns
