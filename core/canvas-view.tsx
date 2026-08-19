@@ -292,6 +292,15 @@ const REVIEW_QUIET =
 const DANGER =
   "text-[hsl(0_84.2%_67%)] transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[hsl(0_84.2%_60.2%_/_0.14)] hover:text-[hsl(0_84.2%_72%)]";
 
+/**
+ * HOW OFTEN THE OPEN CANVAS ASKS WHETHER THE WORK CHANGED UNDER IT.
+ *
+ * Four seconds: a capture takes a minute or more, so this is never the thing a reviewer waits on, and it is slow
+ * enough that a canvas left open all afternoon costs a few hundred reads of a local JSON file. Nothing is
+ * re-rendered unless the answer differs.
+ */
+const WATCH_MS = 4000;
+
 /** How long Approve All can be taken back. Long enough to notice the pill, short enough not to linger. */
 const UNDO_MS = 6000;
 
@@ -427,6 +436,86 @@ export function CanvasView({
       );
     });
   }, [canvas]);
+
+  /**
+   * AND THEN IT KEEPS ASKING — because a capture happens outside the browser and nothing else can tell this tab.
+   *
+   * The effect above runs once per canvas. A capture writes new WebPs and a new manifest to DISK; the running app
+   * imports neither, so hot reload has nothing to reload and the tab keeps drawing the pictures it fetched when it
+   * opened. Every reviewer hit this and one of them knew why; the rest do not: *"the canvas always needs to be
+   * refreshed in my browser in order to see the updates … other people might not know and they will just get
+   * frustrated not understanding why it's the same as it was, even if the AI agent says that he updated it."*
+   *
+   * So the canvas asks, every few seconds, whether the manifest or the notes changed under it. Cheap by
+   * construction: two JSON reads of a local route, only while the tab is actually being looked at, and state is
+   * replaced only when the answer differs from what is on screen — so a quiet canvas re-renders never.
+   *
+   * TWO THINGS IT REFUSES TO OVERWRITE, both of them local truths the server does not know yet:
+   *   - an open undo window (`removing`), whose comments are deliberately hidden until it closes
+   *   - an optimistic verdict (`pending-*`), which exists in this tab and not yet in the file
+   * In both cases the notes are left alone for this round and picked up on the next one, which is the same
+   * mechanism the rest of this view already relies on.
+   *
+   * It also fixes something nobody reported: two tabs open on one canvas, or the reviewer's own comment written
+   * on a phone, now appear on the other screen without a reload.
+   */
+  useEffect(() => {
+    let alive = true;
+    const look = async () => {
+      if (!alive || document.visibilityState !== "visible") return;
+      const [manifest, notes] = await Promise.all([
+        loadShots(canvas),
+        loadComments(canvas),
+      ]);
+      if (!alive) return;
+      /* The pictures. Keyed by screen id and compared by content hash, which is what a recapture changes. */
+      setShots((was) => {
+        const next = Object.fromEntries(
+          manifest.map((shot) => [shot.screenId, shot]),
+        );
+        const signature = (of: typeof next | null) =>
+          of
+            ? Object.values(of)
+                .map((shot) => `${shot.screenId}:${shot.hash}`)
+                .sort()
+                .join("|")
+            : "";
+        return signature(was) === signature(next) ? was : next;
+      });
+      setSeen((was) =>
+        notes.seen === undefined ||
+        (was ?? []).join("|") === notes.seen.join("|")
+          ? was
+          : notes.seen,
+      );
+      setComments((was) => {
+        if (removing || was.some((one) => one.id.startsWith("pending-")))
+          return was;
+        const signature = (list: CanvasComment[]) =>
+          list
+            .map(
+              (one) =>
+                `${one.id}:${one.note}:${one.consumedAt ?? ""}:${one.stale ? 1 : 0}:${one.kind ?? "note"}`,
+            )
+            .join("|");
+        return signature(was) === signature(notes.comments)
+          ? was
+          : notes.comments;
+      });
+    };
+    const timer = window.setInterval(() => void look(), WATCH_MS);
+    /* Coming back to the tab is the moment a reviewer most expects to see the new work, so it looks then too
+       rather than waiting out the rest of the interval. */
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void look();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [canvas, removing]);
 
   /**
    * The verdicts, READ OUT OF THE COMMENTS rather than held beside them. See `CanvasCommentKind`: they are the
