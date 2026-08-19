@@ -868,12 +868,32 @@ export function CanvasView({
     () => allScreens(declaration).map(({ screen }) => screen.id),
     [declaration],
   );
+  /**
+   * NOTHING IS NEW ON A PUBLISHED CANVAS, and this is the fix for a bug the reviewer found on a deployment.
+   *
+   * The blue queue is review chrome, exactly like the comment layer: it exists so the person who asked for the work
+   * can walk the frames they have not seen. A published canvas is a link handed to somebody who has seen none of
+   * them and cannot approve any of them, so the queue has nothing to offer there.
+   *
+   * WHAT IT LOOKED LIKE. `seen` lives in the review file, which is gitignored and therefore absent from a
+   * deployment, so the seeder below fired, the write was refused with a 405 (`readOnly` in `comments-route.ts`), and
+   * the failure path set `seen` to the EMPTY list — which does not mean "unknown", it means "the reviewer has seen
+   * nothing". Every frame on the canvas became new: *"it marked literally all screens as new, even though this
+   * functionality should be hidden (visible only locally, same as with the comments)."*
+   *
+   * Two changes, and the second one matters even locally: the queue is empty when published, and a failed write
+   * leaves `seen` as null rather than empty, so a canvas whose review file cannot be read claims nothing is new
+   * instead of claiming everything is.
+   */
   const isNew = useCallback(
-    (id: string) => seen !== null && !seen.includes(id),
+    (id: string) => !CANVAS_PUBLISHED && seen !== null && !seen.includes(id),
     [seen],
   );
   const newScreens = useMemo(
-    () => (seen === null ? [] : declaredIds.filter((id) => !seen.includes(id))),
+    () =>
+      CANVAS_PUBLISHED || seen === null
+        ? []
+        : declaredIds.filter((id) => !seen.includes(id)),
     [declaredIds, seen],
   );
 
@@ -887,6 +907,9 @@ export function CanvasView({
    */
   const seeded = useRef(false);
   useEffect(() => {
+    /* A published canvas has no review file and refuses writes, so there is nothing to seed and nothing to seed it
+       with. Asking anyway produced the 405 that started the bug above. */
+    if (CANVAS_PUBLISHED) return;
     if (!seenMissing || seeded.current || declaredIds.length === 0) return;
     seeded.current = true;
     void markSeen(canvas, declaredIds)
@@ -894,7 +917,9 @@ export function CanvasView({
         setSeen(list);
         setSeenMissing(false);
       })
-      .catch(() => setSeen([]));
+      /* NULL, NOT EMPTY. Empty is a claim that the reviewer has seen nothing; null is "we do not know", and not
+         knowing has to mean nothing is flagged. */
+      .catch(() => setSeen(null));
   }, [seenMissing, declaredIds, canvas]);
 
   /**
@@ -1048,7 +1073,11 @@ export function CanvasView({
       })),
     [canvases],
   );
-  const [reviewPresent, reviewOpen] = useOpenState(queueLength > 0);
+  /* AND THE BAR IS ABSENT WHEN PUBLISHED, belt and braces: the two queues are empty there, and a bar that offers
+     Approve All on a canvas nobody can write to would be a control that lies. */
+  const [reviewPresent, reviewOpen] = useOpenState(
+    queueLength > 0 && !CANVAS_PUBLISHED,
+  );
   const [undoPresent, undoOpen] = useOpenState(removing !== null);
   /* Held separately because the bar outlives `removing`: it is still fading when the list is already null. */
   const [undoCount, setUndoCount] = useState(0);
