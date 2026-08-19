@@ -267,16 +267,11 @@ const REVIEW_QUIET =
 const DANGER =
   "text-[hsl(0_84.2%_67%)] transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[hsl(0_84.2%_60.2%_/_0.14)] hover:text-[hsl(0_84.2%_72%)]";
 
-/**
- * How much of the world the canvas opens on. Deliberately small: this lands at about half scale, where a
- * captured page is 576px on screen and can actually be judged. Fitting a whole flow instead put the surface
- * at 30%, where every screen is a grey rectangle and the canvas looks like a wireframe of itself.
- */
 /** How long Approve All can be taken back. Long enough to notice the pill, short enough not to linger. */
 const UNDO_MS = 6000;
 
-const OPENING_W = 2900;
-const OPENING_H = 1560;
+/* `OPENING_W` / `OPENING_H` STOOD HERE. They were the corner the canvas used to open on, and the launch now
+   fits the whole world instead — see `opening` below for the owner's ruling. */
 
 export function CanvasView({
   declaration,
@@ -786,22 +781,32 @@ export function CanvasView({
   }, [view, declaration, captured]);
 
 
+  /**
+   * WHERE THE CANVAS OPENS: FITTED, the same as switching tabs.
+   *
+   * It used to frame the first group's corner — `OPENING_W` by `OPENING_H`, about a third scale — on the
+   * argument that fitting everything lands at 6% where nothing can be read. The owner overruled it once the
+   * launch state made the moment visible: *"when the loading finishes, the canvas has to fit the screen instead
+   * of zooming into the first screenshot."*
+   *
+   * He had already settled the same question for tab switching, and in the same direction: a full fit of a wide
+   * world is far out, and *"I wouldn't say it's worse than the emptiness it fixed… I like how it works."* So
+   * launching and switching now do one thing rather than two, and `frame` never magnifies, so a canvas holding
+   * a few frames still lands close in.
+   */
   const opening = useMemo(() => {
-    const first = layout.groups[0];
-    if (!first) return layout.box;
+    if (layout.groups.length === 0) return layout.box;
     /**
-     * THE EXPLORATION OPENS ON ITS HEADING, not on the first section under it.
-     *
-     * The heading sits `HEADING_LIFT` above the first group, and framing the group alone put it off the top of
-     * the screen — the one thing on the tab that says which round this is and what is being asked, invisible
-     * until the reviewer happened to pan up. Including it costs a little zoom and is the whole reason it exists.
+     * THE EXPLORATION'S HEADING IS PART OF WHAT IS FITTED. It sits `HEADING_LIFT` above the first group, and a
+     * fit measured from the groups alone put it off the top of the screen — the one thing on the tab that says
+     * which round this is, invisible until the reviewer happened to pan up.
      */
     const lift = view === "explore" ? HEADING_LIFT : 0;
     return {
-      x: first.box.x,
-      y: first.box.y - lift,
-      w: Math.min(first.box.w, OPENING_W),
-      h: Math.min(first.box.h + lift, OPENING_H + lift),
+      x: layout.box.x,
+      y: layout.box.y - lift,
+      w: layout.box.w,
+      h: layout.box.h + lift,
     };
   }, [layout, view]);
 

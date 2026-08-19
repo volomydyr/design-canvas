@@ -274,11 +274,10 @@ export const CanvasSurface = forwardRef<
   );
 
   /**
-   * WHERE IT OPENS, and why it is not the whole canvas. Fitting everything puts the surface at 6%, where a
-   * page is seventy pixels wide: nothing can be read and every frame in the declaration would ask to load
-   * at once. Opening on one screen and its neighbours lands at about a third scale, which is the zoom this
-   * whole thing is built around — three or four frames across with the edges between them, each frame big
-   * enough for the page inside it to be judged. The caller decides which corner that is.
+   * WHERE IT OPENS, which is wherever the caller says — and since the launch state made that moment visible,
+   * the caller says the whole world. The owner: *"when the loading finishes, the canvas has to fit the screen
+   * instead of zooming into the first screenshot."* This code does not care which box it is: it frames what it
+   * is handed, once, and `frame` never magnifies.
    */
   const framedOnce = useRef(false);
   useEffect(() => {
@@ -481,10 +480,33 @@ export const CanvasSurface = forwardRef<
         }}
         data-canvas-launch={placed ? "done" : "placing"}
       >
-        <div className="flex flex-col items-center gap-3 animate-pulse motion-reduce:animate-none">
-          <div className="h-[3px] w-16 rounded-full bg-white/[0.14]" />
+        {/**
+         * WHAT IT LOOKS LIKE: three frames arriving, which is what is about to happen.
+         *
+         * The first version was a lone 3px bar over the title and the owner rejected it — *"it looks kind of
+         * weird. I know you can do better."* It read as a progress bar that never progressed, floating in a
+         * void, and it said nothing about what was loading.
+         *
+         * This is the canvas's own subject instead: three rounded rectangles at the frames' proportion, the
+         * middle one nearer, in the SAME fills the per-frame skeleton uses (`white/[0.05]` and `white/[0.06]`)
+         * so the launch and the skeletons are visibly one idea rather than two loading states. The motion is a
+         * single pulse on opacity across the group, for the reason the skeleton gives: no shimmer, nothing that
+         * repaints, because the surface underneath is an instrument.
+         *
+         * Type is the canvas's own `0.8125rem` chrome step, and the words are the canvas's name, so the wait
+         * says which canvas is opening rather than that something is happening.
+         */}
+        <div className="flex flex-col items-center gap-6">
+          <div
+            className="flex items-end gap-3 animate-pulse motion-reduce:animate-none"
+            aria-hidden
+          >
+            <div className="h-[52px] w-[84px] rounded-[5px] bg-white/[0.05]" />
+            <div className="h-[74px] w-[118px] rounded-[6px] bg-white/[0.08]" />
+            <div className="h-[52px] w-[84px] rounded-[5px] bg-white/[0.05]" />
+          </div>
           {launch ? (
-            <div className="text-[0.75rem] font-medium tracking-[0.01em] text-white/45">
+            <div className="text-[0.8125rem] font-medium tracking-[0.01em] text-white/40">
               {launch}
             </div>
           ) : null}
