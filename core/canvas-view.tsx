@@ -1126,6 +1126,10 @@ export function CanvasView({
         opening={opening}
         onZoom={setZoom}
         locked={commenting}
+        /* WHAT THE LAUNCH STATE SAYS while the world is being placed. The surface owns when it shows and the
+           fade; the words are the canvas's own name, because the core knows nothing about what it is drawing
+           and a spinner with no subject says less than the title does. */
+        launch={declaration.title}
       >
         {/* Every section first, so the panels paint UNDER the edges and the frames rather than over them. */}
         {/**

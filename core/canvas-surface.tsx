@@ -76,10 +76,26 @@ export const CanvasSurface = forwardRef<
     onZoom?: (zoom: number) => void;
     /** True while a tile is taking comment clicks: dragging then would fight the pin. */
     locked?: boolean;
+    /**
+     * WHAT TO SHOW WHILE THE WORLD IS BEING PLACED, and why this exists at all.
+     *
+     * The transform starts at the world's top-left corner at half scale, and the opening framing runs in an
+     * effect — which is to say AFTER the first paint. So opening the canvas showed one frame of the first
+     * screenshot, blown up in the corner, and then jumped. The owner: *"for a fraction of a second, it keeps
+     * me super zoomed in to, I think one of the or even the first image on the canvas, which just looks
+     * weird. I think it has to be some kind of an overall nice looking smooth, smooth, quick loading for
+     * launching this canvas and then skeletons whenever the screens are not able to load super fast."*
+     *
+     * The surface owns the TIMING, because it is the only thing that knows when it has been placed. The
+     * caller owns the WORDS, because the core knows nothing about what canvas it is drawing. Nothing here
+     * animates the transform: an entrance from nowhere would be motion for its own sake, so the world simply
+     * fades in once it is pointing at the right place.
+     */
+    launch?: ReactNode;
     children: ReactNode;
   }
 >(function CanvasSurface(
-  { world, opening, onZoom, locked = false, children },
+  { world, opening, onZoom, locked = false, launch, children },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -89,6 +105,8 @@ export const CanvasSurface = forwardRef<
   const raf = useRef(0);
   const reported = useRef(0.5);
   const [grabbing, setGrabbing] = useState(false);
+  /** False until the opening framing has been applied, which is what the veil below waits on. */
+  const [placed, setPlaced] = useState(false);
 
   const clampZoom = (zoom: number) =>
     Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
@@ -270,6 +288,8 @@ export const CanvasSurface = forwardRef<
     /* Placed, not animated in: an entrance from nowhere would be motion for its own sake. */
     current.current = { ...target.current };
     paint();
+    /* Only now is the world pointing anywhere worth looking at, so only now may it be seen. */
+    setPlaced(true);
   }, [opening, frame, paint]);
 
   /* ------------------------------------------------------------------ wheel */
@@ -431,9 +451,44 @@ export const CanvasSurface = forwardRef<
       <div
         ref={worldRef}
         className="absolute left-0 top-0 origin-top-left"
+        style={{
+          opacity: placed ? 1 : 0,
+          transition: "opacity 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
         data-canvas-world=""
       >
         {children}
+      </div>
+      {/**
+       * THE LAUNCH STATE: the stage, and one quiet line, for as long as it takes to place the world.
+       *
+       * Built from the skeleton's own language rather than a new one — a plain fill and a pulse on OPACITY,
+       * which the compositor animates without paint or layout, and no shimmer for the reason the skeleton
+       * gives. It is never unmounted, only faded, so nothing pops as it goes; `pointer-events-none` once it
+       * is out, or it would keep eating the first drag.
+       *
+       * The frames take over from here: a picture that has not arrived yet is a skeleton, which is what the
+       * owner asked to keep — *"and then skeletons whenever the screens are not able to load super fast and
+       * need some more time. Like basically like it works already."*
+       */}
+      <div
+        aria-hidden
+        className="absolute inset-0 grid place-items-center bg-[hsl(192_12%_13%)]"
+        style={{
+          opacity: placed ? 0 : 1,
+          pointerEvents: placed ? "none" : "auto",
+          transition: "opacity 220ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
+        data-canvas-launch={placed ? "done" : "placing"}
+      >
+        <div className="flex flex-col items-center gap-3 animate-pulse motion-reduce:animate-none">
+          <div className="h-[3px] w-16 rounded-full bg-white/[0.14]" />
+          {launch ? (
+            <div className="text-[0.75rem] font-medium tracking-[0.01em] text-white/45">
+              {launch}
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );
