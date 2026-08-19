@@ -290,6 +290,39 @@ if (undrained.length > 0)
       `PATCH ${commentsApi} with { id, consumed: true } for each one you acted on.`,
   );
 
+/**
+ * AND WHAT IS STILL OUTSTANDING, EVERY RUN, WITH ITS IDS — because the gate above cannot see the worst case.
+ *
+ * `stale && !consumedAt` only catches a comment whose screen was recaptured, which means it only catches notes the
+ * agent already touched. A note it never opened is not stale, so it passes this oracle in silence. That is how a run
+ * ends clean with real feedback untouched: fifteen were waiting, ten were worked, five were never read, and every
+ * check passed. The owner, on finding those five still sitting there: *"I don't know how that's possible that there
+ * are comments that were not in my handoff."*
+ *
+ * So the run always states the whole set. A NOTE and not a failure, because unconsumed comments are the normal state
+ * of a canvas the moment after a review: the reviewer writes them, and the capture that follows is often the one that
+ * photographs the screens they were written on. What matters is that the number is said out loud, next to the ids, so
+ * it can be compared with what was worked.
+ *
+ * THE SPENT ONES ARE EXCLUDED, by the same rule the canvas uses (`canvas-view.tsx`): a like or a dislike on a screen
+ * this declaration no longer names was already acted on, and acting on it is why the screen is gone. They stay in the
+ * file so the reviewer can read back what they judged, and they are not work. Notes are never excluded, homeless or
+ * not: a note whose frame was deleted is still feedback and still travels.
+ */
+const declaredIds = new Set(screens.map((screen) => screen.id));
+const outstanding = (comments.comments ?? []).filter(
+  (comment) =>
+    !comment.consumedAt &&
+    !(comment.kind && comment.kind !== "note" && !declaredIds.has(comment.screenId)),
+);
+if (outstanding.length > 0)
+  notes.push(
+    `${outstanding.length} comment(s) are still unconsumed (${outstanding
+      .map((one) => one.id)
+      .join(", ")}). ` +
+      `That is the whole set the canvas hands off. If you worked fewer than this, you missed some.`,
+  );
+
 for (const screen of screens) {
   const shot = shotOf.get(screen.id);
   if (!shot) {

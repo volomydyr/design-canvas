@@ -171,8 +171,21 @@ const SECTION_PAD = 90;
  * itself carries its own contract — every comment in it has the screen, the real route, the pinned state, the
  * region, and a picture of that region with the outline drawn on.
  */
-const handoffLine = (canvas: string, file: string) =>
-  `Act on the design comments in ${file}. Each one has an \`image\`: open it and look inside the red outline. When a comment is done, PATCH /api/design-canvas/comments?canvas=${canvas} with { id, consumed: true }.`;
+/**
+ * IT NAMES EVERY ONE OF THEM, and that is not decoration.
+ *
+ * This said "act on the design comments in <file>" and left the agent to work out which. It read the file, took
+ * the ids it happened to see, and worked ten of fifteen — the five it missed included a comment that rejected a
+ * whole screen. The reviewer then found work he had given still sitting there: *"I don't know how that's possible
+ * that there are comments that were not in my handoff so they either were in the handoff and there is some kind of
+ * a bug in the skill that you definitely need to fix."* There was: a prompt that states a count and a list cannot
+ * be half-completed by accident, and one that states neither invites exactly that.
+ *
+ * The ids come from `waiting`, which is the same set the Hand Off badge counts, so the number in the prompt and
+ * the number on the button can never disagree.
+ */
+const handoffLine = (canvas: string, file: string, ids: string[]) =>
+  `Act on all ${ids.length} design comment(s) in ${file}: ${ids.join(", ")}. Work every one of them, not a subset — if one seems already handled, say so rather than skipping it silently. Each has an \`image\`: open it and look inside the red outline. When a comment is done, PATCH /api/design-canvas/comments?canvas=${canvas} with { id, consumed: true }.`;
 
 /**
  * WHAT A JUDGED EXPLORATION HANDS OVER, which is a round of work rather than a list of notes.
@@ -816,7 +829,11 @@ export function CanvasView({
   const handoffText =
     (view === "explore" && handoffPanels.length > 0
       ? explorationHandoff(canvas, commentsFile, handoffPanels)
-      : handoffLine(canvas, commentsFile)) +
+      : handoffLine(
+          canvas,
+          commentsFile,
+          waiting.map((one) => one.id),
+        )) +
     threadClause +
     homelessClause;
 
