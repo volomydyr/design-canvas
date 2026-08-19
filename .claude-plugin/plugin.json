@@ -1,0 +1,15 @@
+{
+  "name": "design-canvas",
+  "description": "A design-review canvas for any project: every screen and every state of the real running app, captured as real frames on one pannable surface, grouped by kind and drawn as user flows, with a comment layer that hands an agent the annotated picture of what was pointed at.",
+  "author": {
+    "name": "volomydyr"
+  },
+  "keywords": [
+    "design",
+    "design-review",
+    "screenshots",
+    "user-flows",
+    "playwright",
+    "nextjs"
+  ]
+}
