@@ -48,6 +48,7 @@ import {
 import { cn } from "./cn";
 import {
   BAR_MOTION,
+  BAR_MOTION_TINT,
   MOTION_STYLE,
   PANEL_MOTION,
   useDismissOnOutside,
@@ -57,6 +58,8 @@ import { CanvasTooltip } from "./canvas-tooltip";
 import {
   IconCheck,
   IconComment,
+  IconCommentBubble,
+  IconFrames,
   IconCopy,
   IconDesktop,
   IconLeft,
@@ -1832,7 +1835,7 @@ export function CanvasView({
       </div>
 
       {/**
-       * THE ZOOM, IN ITS OWN BAR AT THE BOTTOM RIGHT.
+       * THE ZOOM, IN ITS OWN BAR AT THE TOP RIGHT.
        *
        * It sat in the top toolbar between the tabs and the comment control, which put a continuous adjustment in
        * the middle of a row of one-off choices. The owner moved it: *"move this outside the top toolbar to become
@@ -1841,9 +1844,13 @@ export function CanvasView({
        *
        * Flush, so the three read as one control rather than three: no gap on this row, and the padding is on the
        * items. Same surface, same height, same radius as the top bar, so it is the same instrument in two places.
+       *
+       * AND THEN IT MOVED AGAIN, to the top right: *"move the zoom in and zoom out bar from the bottom where it is
+       * currently placed in the bottom right part and move it to the top right corner of the canvas."* Which also
+       * gets it out from under the review row, whose switch now reaches further left and right than the bar did.
        */}
       <div
-        className="absolute bottom-6 right-6 z-[60] flex items-center rounded-full bg-[hsl(180_15%_5.5%)] px-2 py-2 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.04),0px_10px_32px_0px_rgba(0,0,0,0.04)]"
+        className="absolute right-6 top-6 z-[60] flex items-center rounded-full bg-[hsl(180_15%_5.5%)] px-2 py-2 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.04),0px_10px_32px_0px_rgba(0,0,0,0.04)]"
         data-canvas-chrome=""
         data-canvas-zoombar=""
       >
@@ -1890,6 +1897,93 @@ export function CanvasView({
        * on. The verdict itself is given in the pin, where the outline and the words are.
        */}
       {reviewPresent ? (
+        /**
+         * THE SWITCH AND THE BAR TRAVEL TOGETHER, in one centred row.
+         *
+         * The bar used to centre itself. It cannot any more: the switch has to sit immediately to its LEFT, and the
+         * bar's width changes with its label, so anything anchored to the centre would drift away from its edge.
+         * The pair is centred instead, which keeps the two touching at every width.
+         */
+        <div
+          className="absolute bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2"
+          data-canvas-review-row=""
+        >
+          {/**
+           * ONE BUTTON THAT IS THE OTHER QUEUE, wearing the other queue's colour and carrying its count.
+           *
+           * Two kinds of thing wait on a canvas — designs nobody has seen, and comments already worked — and the bar
+           * shows one of them at a time. Which meant the other one was invisible: the reviewer had no way of knowing
+           * it was there. The owner asked for it directly: *"it would be nice if we had some kind of a switch between
+           * the designs and the comments, because right now it's not quite clear that there are some of them here and
+           * there … to the left from this bar there could be another bar with just one action icon inside of it. So if
+           * we are showing a blue bar with new screens, then that other one has to be green and show a comment icon
+           * and vice versa … And both could have a numbered badge."*
+           *
+           * So it is always the OPPOSITE of the bar beside it: colour, glyph and number. It only exists when there is
+           * something on the other side, because a switch to an empty queue is a dead control.
+           */}
+          {newScreens.length > 0 && toReview.length > 0 ? (
+            /**
+             * IT IS A BAR, NOT A BUTTON — the same container as the one beside it, holding one ordinary action.
+             *
+             * The first version was a single coloured oval with a glyph in it, which is a control this tool does not
+             * have. The owner: *"the size of this thing should be the same as the size of the other toolbar, meaning
+             * that it has to be like the same container with one action inside. and the action has to be the same
+             * like everywhere else. the same exact treatment and visual approach, instead of a new oval action that
+             * you just invented."* So: the review bar's own surface, padding, radius and shadow, and inside it a
+             * `BAR_ITEM` square in `REVIEW_QUIET` — byte for byte the treatment every other action in these bars
+             * wears. Its height therefore matches without being stated.
+             */
+            <div
+              style={MOTION_STYLE}
+              className={cn(
+                "relative flex items-center rounded-full p-1.5 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.18),0px_10px_32px_0px_rgba(0,0,0,0.22)]",
+                "transition-[background-color] motion-reduce:transition-none",
+                onNew ? "bg-[hsl(154_46%_30%)]" : "bg-[hsl(206_58%_36%)]",
+              )}
+              data-canvas-chrome=""
+              data-canvas-review-switch={onNew ? "comments" : "new"}
+            >
+              <button
+                type="button"
+                title={onNew ? "Comments to review" : "New screens"}
+                aria-label={
+                  onNew
+                    ? `Comments to review (${toReview.length})`
+                    : `New screens (${newScreens.length})`
+                }
+                onClick={() => step(onNew ? newScreens.length : 0)}
+                className={cn(BAR_ITEM, REVIEW_QUIET, BAR_SQUARE)}
+              >
+                {/* BOTH GLYPHS, STACKED, ONE FADING OUT AS THE OTHER FADES IN — over the same 220ms as the tint, so
+                    the whole control changes as one gesture instead of the colour easing while the icon cuts. */}
+                <span className="relative grid h-4 w-4 place-items-center">
+                  <IconCommentBubble
+                    className={cn(
+                      "absolute transition-opacity motion-reduce:transition-none",
+                      onNew ? "opacity-100" : "opacity-0",
+                    )}
+                  />
+                  <IconFrames
+                    className={cn(
+                      "absolute transition-opacity motion-reduce:transition-none",
+                      onNew ? "opacity-0" : "opacity-100",
+                    )}
+                  />
+                </span>
+              </button>
+              {/* THE COUNT, IN THE CORNER. White on the bar's own hue rather than a third colour: it is a number, not
+                  another state. `tabular-nums` so two digits do not shift its width. */}
+              <span
+                className={cn(
+                  "pointer-events-none absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-white px-1 text-[0.625rem] font-semibold leading-none tabular-nums",
+                  onNew ? "text-[hsl(154_46%_24%)]" : "text-[hsl(206_58%_30%)]",
+                )}
+              >
+                {onNew ? toReview.length : newScreens.length}
+              </span>
+            </div>
+          ) : null}
         <div
           data-open={reviewOpen}
           style={MOTION_STYLE}
@@ -1907,9 +2001,12 @@ export function CanvasView({
            * so the bar and the thing it is pointing at are visibly one state.
            */
           className={cn(
-            "absolute bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center rounded-full p-1.5 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.18),0px_10px_32px_0px_rgba(0,0,0,0.22)]",
+            /* 10px ON THE RIGHT, 6 EVERYWHERE ELSE: *"increase the right side padding in the toolbar here by 4 more
+               px."* Approve All is the widest thing in the bar and it sat too near the edge, which the arrows and
+               the count did not because they are square. */
+            "flex items-center rounded-full p-1.5 pr-2.5 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.18),0px_10px_32px_0px_rgba(0,0,0,0.22)]",
             onNew ? "bg-[hsl(206_58%_36%)]" : "bg-[hsl(154_46%_30%)]",
-            BAR_MOTION,
+            BAR_MOTION_TINT,
           )}
           data-canvas-chrome=""
           data-canvas-review={onNew ? "new" : "comments"}
@@ -1932,7 +2029,8 @@ export function CanvasView({
             className={cn(BAR_ITEM, "px-2.5", REVIEW_QUIET, "tabular-nums")}
             onClick={() => step(at ?? 0)}
           >
-            {kindIndex + 1} of {kindTotal} {onNew ? "New" : "to Review"}
+            {kindIndex + 1} of {kindTotal}{" "}
+            {onNew ? "New Screens" : "Comments to Review"}
           </button>
           <button
             type="button"
@@ -1989,6 +2087,7 @@ export function CanvasView({
                 but from the reviewer's seat both are "I have looked at these and they are fine". */}
             Approve All
           </button>
+        </div>
         </div>
       ) : null}
 

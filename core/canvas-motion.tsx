@@ -41,6 +41,20 @@ export const PANEL_MOTION =
 export const BAR_MOTION =
   "transition-[opacity,transform] motion-reduce:transition-none data-[open=false]:pointer-events-none data-[open=false]:opacity-0 data-[open=false]:translate-y-2 data-[open=true]:opacity-100 data-[open=true]:translate-y-0";
 
+/**
+ * THE REVIEW BAR ALSO CHANGES COLOUR, so its tint has to travel with the same duration and curve as everything else.
+ *
+ * `BAR_MOTION` names the two properties a bar animates on the way in and out. The review bar does one more thing: it
+ * turns from blue to green as the queue crosses from new screens to comments, and that swapped instantly while the
+ * rest of the tool eased. The owner: *"when I switch between these two toolbars, between the new screens and comments
+ * to review, there should be a smooth animation like everywhere else we have it. It should not change just
+ * instantly."* Derived from `BAR_MOTION` rather than written out, so the two can never drift apart.
+ */
+export const BAR_MOTION_TINT = BAR_MOTION.replace(
+  "transition-[opacity,transform]",
+  "transition-[opacity,transform,background-color]",
+);
+
 /** The inline style both of the above need. Kept here so the duration and curve have exactly one home. */
 export const MOTION_STYLE = {
   transitionDuration: `${MOTION_MS}ms`,

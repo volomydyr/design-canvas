@@ -131,6 +131,49 @@ export function IconComment(props: IconProps) {
   );
 }
 
+/**
+ * A COMMENT, as a comment is drawn everywhere: a bubble with a tail.
+ *
+ * NOT the dashed rectangle. That one is the comment TOOL — the shape you drag over a design — and it belongs to the
+ * top toolbar, where it stays: *"For comments you should use the comment icon, not the dashed one. And I'm talking
+ * about this new element. I'm not saying change it in the top toolbar."* On a switch that means "go to the comments
+ * waiting for you", the subject is the comments themselves, so it is the ordinary glyph for one.
+ */
+export function IconCommentBubble(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M20.5 12.25c0 4.15-3.8 7.25-8.5 7.25a9.6 9.6 0 01-2.4-.3L5 20.5l1.35-3.4A6.85 6.85 0 013.5 12.25C3.5 8.1 7.3 5 12 5s8.5 3.1 8.5 7.25z" />
+    </Svg>
+  );
+}
+
+/**
+ * NEW SCREENS, on the switch that crosses from the comments to the designs nobody has looked at yet.
+ *
+ * Two frames, one behind the other, because the destination is a SET of designs rather than one screen. It cannot be
+ * the monitor (`IconDesktop`): that glyph belongs to the device switch a few pixels away, and a switch that borrows
+ * its neighbour's glyph says the neighbour's thing. It cannot be the dashed rectangle either, which is this tool's
+ * comment mark and is the other half of the same control.
+ */
+export function IconFrames(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/**
+       * FOUR FRAMES IN A GRID, chosen out of four candidates: a frame with a plus (a plus means "create" everywhere
+       * else in this tool, and nothing is being created), layers, and an eye. The owner picked this one, and it is the
+       * canvas itself in miniature — a wall of screens, which is exactly where pressing it goes.
+       *
+       * An earlier attempt drew two overlapping frames and he was blunt about it: *"for the new designs icon we need
+       * to discuss which icon we should use, because the one you currently have is like completely weird."*
+       */}
+      <rect x="3" y="3.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="3.5" width="7.5" height="7.5" rx="1.5" />
+      <rect x="3" y="14" width="7.5" height="7.5" rx="1.5" />
+      <rect x="13.5" y="14" width="7.5" height="7.5" rx="1.5" />
+    </Svg>
+  );
+}
+
 /** On the Open button under every frame: out of the picture, back to the running page. */
 export function IconOpenExternal(props: IconProps) {
   return (
