@@ -24,6 +24,9 @@
  *           declaration has an `explorations` entry and goes when the question is decided.
  */
 
+/* THE ONE FRAMEWORK IMPORT IN THIS FILE. The canvas is a Next tool — its two API routes already import from
+   `next/server` — and this is what lets a canvas switch without reloading the app. */
+import { useRouter } from "next/navigation";
 import {
   Fragment,
   type ReactNode,
@@ -295,17 +298,17 @@ const DANGER =
   "text-[hsl(0_84.2%_67%)] transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[hsl(0_84.2%_60.2%_/_0.14)] hover:text-[hsl(0_84.2%_72%)]";
 
 /**
- * A CANVAS'S NAME, out of its title, for a control that has one line to say it in.
+ * THERE IS NO SHORT NAME ANY MORE, because the title IS the name.
  *
- * A title is written for the index page, where there is room for a sentence: "Online Store — every surface, live".
- * On a 320px control that is a paragraph, so the switcher shows what comes before the first dash or colon — which
- * is the name in every title this tool has seen, and the whole title when there is no separator. Trimmed rather
- * than declared, because a second field for the same fact is a second thing that can disagree with the first.
+ * A helper stood here that cut a title at its first dash or colon, so the switcher showed "Online Store" while the
+ * index card showed the whole sentence. Two strings for one canvas, and the owner caught it immediately: *"if we're
+ * using one name on the index canvas page, then we should use the same name in the drop down where you can switch
+ * between canvases, right? because that's pretty obvious but I clearly see that you do not follow it."*
+ *
+ * The fix is upstream of both surfaces: `title` is a NAME of four words or fewer, checked by `copy-rules.mjs`, and
+ * the sentence that used to be jammed into it lives in `note`, which is what the index draws its description from.
+ * Nothing trims anything now.
  */
-function shortName(title: string): string {
-  const cut = title.split(/\s+[—–:|]\s+|\s+-\s+/)[0]?.trim();
-  return cut && cut.length > 0 ? cut : title;
-}
 
 /**
  * HOW OFTEN THE OPEN CANVAS ASKS WHETHER THE WORK CHANGED UNDER IT.
@@ -417,8 +420,11 @@ export function CanvasView({
   const [handoff, setHandoff] = useState(false);
   /** Whether the canvas switcher in the top-left corner is open. */
   const [switching, setSwitching] = useState(false);
+  /* The only Next import in the view, and it is here so switching canvases does not reload the app. */
+  const router = useRouter();
   /* The whole button-plus-panel, so a press on the button itself is not read as a press outside. */
   const handoffRef = useRef<HTMLDivElement | null>(null);
+  const switcherRef = useRef<HTMLDivElement | null>(null);
   /** Clear All, pressed once. See the button for why it takes two. */
   const [armed, setArmed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -1037,7 +1043,7 @@ export function CanvasView({
     () =>
       Object.entries(canvases ?? {}).map(([slug, one]) => ({
         slug,
-        title: shortName(one.title),
+        title: one.title,
         frames: allScreens(one).length,
       })),
     [canvases],
@@ -1057,6 +1063,15 @@ export function CanvasView({
     setArmed(false);
   }, []);
   useDismissOnOutside(handoff, handoffRef, closeHandoff);
+  /**
+   * A PRESS OUTSIDE CLOSES IT, and Escape too — which is what every other panel in this tool already did.
+   *
+   * The switcher shipped without it and the owner met the gap immediately: *"maybe if I open this dropdown and I
+   * click outside of it, it should close. that's the expected behavior."* He is right, and the fix is the hook the
+   * hand-off panel has used all along rather than a second mechanism beside it.
+   */
+  const closeSwitcher = useCallback(() => setSwitching(false), []);
+  useDismissOnOutside(switching, switcherRef, closeSwitcher);
 
   /* The layout is told what was actually captured, because a whole-page shot is several viewports tall and a
      layout that assumed one viewport would overlap everything under it. */
@@ -1735,7 +1750,11 @@ export function CanvasView({
        * hold the page you are already on is a control that does nothing.
        */}
       {siblings.length > 1 ? (
-        <div className="absolute left-5 top-5 z-[60]" data-canvas-switcher="">
+        <div
+          ref={switcherRef}
+          className="absolute left-5 top-5 z-[60]"
+          data-canvas-switcher=""
+        >
           <div
             className="flex items-center rounded-full bg-[hsl(180_15%_5.5%)] px-2 py-2 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.04),0px_10px_32px_0px_rgba(0,0,0,0.04)]"
             data-canvas-chrome=""
@@ -1747,9 +1766,8 @@ export function CanvasView({
               onClick={() => setSwitching((was) => !was)}
               className={cn(BAR_ITEM, BAR_PAD, BAR_QUIET)}
             >
-              <span className="max-w-[220px] truncate">
-                {shortName(declaration.title)}
-              </span>
+              {/* Truncated anyway: a project can declare a longer title than the copy checker allows. */}
+              <span className="max-w-[220px] truncate">{declaration.title}</span>
               <IconChevron
                 className={cn(
                   "transition-transform motion-reduce:transition-none",
@@ -1769,11 +1787,36 @@ export function CanvasView({
               data-canvas-chrome=""
             >
               {siblings.map((one) => (
-                /* A REAL LINK, because a canvas is a route: its shots, its comments and its review all live under
-                   that slug, and a client-side swap would have to re-fetch every one of them anyway. */
+                /**
+                 * A LINK, TRAVELLED CLIENT-SIDE, and the difference is the whole of what the owner saw.
+                 *
+                 * A plain `href` is a document navigation: the app unmounts, the browser paints its own blank page,
+                 * and the canvas comes back through a cold boot. Between two canvases in the same app that reads as
+                 * a fault — *"when I switch between canvases, I should see our nice smooth animation instead of some
+                 * buggy flashlight experience that I currently get sometimes."* The flash was the reload.
+                 *
+                 * `router.push` keeps the app mounted, so the new canvas arrives the way a canvas is supposed to:
+                 * held blank behind the loader while its world is placed, then fitted to the screen. It is still a
+                 * real `<a href>` underneath, so the row can be opened in a new tab and read by a screen reader as
+                 * the link it is.
+                 */
                 <a
                   key={one.slug}
                   href={`/design-canvas/${one.slug}`}
+                  onClick={(event) => {
+                    /* Let the browser have the modified presses: new tab, new window, download. */
+                    if (
+                      event.metaKey ||
+                      event.ctrlKey ||
+                      event.shiftKey ||
+                      event.altKey ||
+                      event.button !== 0
+                    )
+                      return;
+                    event.preventDefault();
+                    setSwitching(false);
+                    if (one.slug !== canvas) router.push(`/design-canvas/${one.slug}`);
+                  }}
                   aria-current={one.slug === canvas ? "page" : undefined}
                   className={cn(
                     "flex items-center gap-2 rounded-xl px-3 py-2.5 text-[0.8125rem] transition-colors",
@@ -1794,6 +1837,19 @@ export function CanvasView({
               <span className="mx-3 my-1 block h-px bg-white/[0.08]" />
               <a
                 href="/design-canvas"
+                onClick={(event) => {
+                  if (
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey ||
+                    event.button !== 0
+                  )
+                    return;
+                  event.preventDefault();
+                  setSwitching(false);
+                  router.push("/design-canvas");
+                }}
                 className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-[0.8125rem] text-white/55 transition-colors hover:bg-white/[0.06] hover:text-white"
               >
                 All canvases

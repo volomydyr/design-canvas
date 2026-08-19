@@ -133,6 +133,14 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
       if (params.get("screens") === "1") {
         return NextResponse.json({
           canvas: slug,
+          /* The canvas's own copy, so the copy checker can hold it to the same rules as everything else. */
+          title: declaration.title,
+          note: declaration.note,
+          groups: declaration.flows.map((flow) => ({
+            id: flow.id,
+            title: flow.title,
+            note: flow.note,
+          })),
           viewport: declaration.viewport,
           /* The declared sections travel with the screens, because the oracle checks one against the other. */
           kinds: declaration.kinds ?? null,
@@ -144,6 +152,8 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             view,
             /* Which section it was filed under. Served so the oracle can hold it against `kinds` above. */
             kind: screen.kind ?? null,
+            /* The line under the frame. Served for the copy checker; nothing else downstream reads it. */
+            note: screen.note,
             url: screenUrl(screen.route, screen.state),
             expect: screen.expect
               ? Array.isArray(screen.expect)

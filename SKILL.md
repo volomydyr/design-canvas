@@ -477,8 +477,12 @@ shipped file cannot know better, and an unwritten project half means the ports a
 
 ### 3. Write the declaration
 
-`design-canvas/project/flows.ts` is the only place screens are named. The starter it was installed with
-carries the rules; `references/declaration.md` carries them with their reasons — what a claim is and why it
+`design-canvas/project/flows.ts` is the only place screens are named. **Read
+[references/copy.md](references/copy.md) before you write a word of it**: every title, label and note on a canvas
+is held to one standard, ASD-STE100 Simplified Technical English, and `check-canvas.mjs` FAILS on a violation
+rather than noting it. The short version is one idea per sentence, the active voice, Title Case on names and
+labels, twenty words on a screen note, and no "simply" or "really" anywhere. The starter it was installed with
+carries the rest of the rules; `references/declaration.md` carries them with their reasons — what a claim is and why it
 must be chosen from the page rather than from the label, why an empty state needs `expectMissing` and cannot
 be proved without it, why no two screens may resolve to the same address and state, why labels use the
 product's words and never the tool's, why every `kind` needs at least two screens, and the edge-label rule (an action starting with a verb from a closed list, or a condition starting with

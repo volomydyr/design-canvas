@@ -130,6 +130,8 @@ for (const file of [
   /* Splitting a canvas that has outgrown itself: the declaration is a text edit, but the REVIEW has to be moved
      with the frames or the old file keeps notes about screens it no longer draws. */
   "split-canvas.mjs",
+  /* The copy standard, imported by check-canvas.mjs. Without it the oracle cannot start. */
+  "copy-rules.mjs",
   "dump-screens.mjs",
 ]) {
   put(path.join(SKILL, "tool", file), path.join("design-canvas", file));

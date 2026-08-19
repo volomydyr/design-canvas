@@ -30,6 +30,9 @@ import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
 
+/* The copy standard, as code. Its docblock carries the rules and where they come from. */
+import { checkCanvasCopy } from "./copy-rules.mjs";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 function argOf(name) {
@@ -79,7 +82,7 @@ const SHELL_SELECTOR =
    serve — and reading them separately is a second opinion rather than a shortcut. */
 async function declared() {
   const response = await fetch(`${shotsApi}&screens=1`);
-  const { screens, kinds } = await response.json();
+  const { screens, kinds, title, note, groups } = await response.json();
   const source = readFileSync(path.join(HERE, "project", "flows.ts"), "utf8");
   const all = [
     ...source.matchAll(
@@ -105,7 +108,7 @@ async function declared() {
       (here.has(edge.from) || here.has(edge.to)) &&
       !(here.has(edge.from) && here.has(edge.to)),
   );
-  return { screens, edges, half, kinds };
+  return { screens, edges, half, kinds, title, note, groups };
 }
 
 const failures = [];
@@ -161,7 +164,31 @@ function checkLabels(edges) {
   }
 }
 
-const { screens, edges, half, kinds: declaredKinds } = await declared();
+const {
+  screens,
+  edges,
+  half,
+  kinds: declaredKinds,
+  title: canvasTitle,
+  note: canvasNote,
+  groups,
+} = await declared();
+
+/**
+ * EVERY WORD THIS CANVAS DRAWS, HELD TO ONE STANDARD — see `copy-rules.mjs` for what the standard is and why.
+ *
+ * A FAILURE rather than a note, unlike the size check beside it. A canvas that is too big is a judgment call; a
+ * label of eleven words or a note that says "simply" is not. And the copy is the half of this tool a reader who was
+ * not in the room actually depends on.
+ */
+for (const problem of checkCanvasCopy({
+  title: canvasTitle,
+  note: canvasNote,
+  groups,
+  screens,
+  kinds: declaredKinds,
+}))
+  failures.push(`copy: ${problem}`);
 
 /**
  * IS EVERY SCREEN IN A SECTION THIS CANVAS ACTUALLY HAS? — the check that stops a canvas drifting as it grows.
