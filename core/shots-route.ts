@@ -134,12 +134,16 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
         return NextResponse.json({
           canvas: slug,
           viewport: declaration.viewport,
+          /* The declared sections travel with the screens, because the oracle checks one against the other. */
+          kinds: declaration.kinds ?? null,
           /* Both views: an exploration's directions are captured exactly like a flow's screens, or the
              comparison the whole tab exists for has nothing in its frames. */
           screens: allScreens(declaration).map(({ screen, view }) => ({
             id: screen.id,
             label: screen.label,
             view,
+            /* Which section it was filed under. Served so the oracle can hold it against `kinds` above. */
+            kind: screen.kind ?? null,
             url: screenUrl(screen.route, screen.state),
             expect: screen.expect
               ? Array.isArray(screen.expect)

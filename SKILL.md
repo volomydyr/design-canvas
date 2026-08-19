@@ -496,6 +496,17 @@ and the arrows, not the frames, do the explaining:
 > "user flows don't need titles about screens. they need interaction explanation over the arrows, making it
 > clear what has happened."
 
+**ADDING A SCREEN TO A CANVAS THAT ALREADY EXISTS IS ITS OWN STEP, and it is the one that rots.** Read
+`kinds` in the declaration before writing the entry, and file the screen under one of the sections it names.
+If none of them fits, add a section deliberately, with a sentence saying what belongs in it. This is checked:
+a screen filed under a section the declaration does not name is an oracle FAILURE, not a note, because the
+alternative is a heading that looks deliberate and is not. It came from a real one, an error state filed
+beside the happy path: _"This is an error state, so you put it in the wrong section … it's important that even
+after the canvas becomes reeeeally big, you put new screens in their proper places (groups or flows) or create
+new ones when needed, even if you start from a blank context but in the project with such a canvas already set
+up."_ The same judgment applies to flows: a new state usually belongs in an existing flow, next to the states
+it can be reached from, and a new flow is for a journey none of them covers.
+
 ### 4. Make every declared state reachable by URL
 
 The bulk of the work, and it is app-code work rather than canvas work.

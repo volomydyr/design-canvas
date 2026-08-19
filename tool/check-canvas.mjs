@@ -79,7 +79,7 @@ const SHELL_SELECTOR =
    serve — and reading them separately is a second opinion rather than a shortcut. */
 async function declared() {
   const response = await fetch(`${shotsApi}&screens=1`);
-  const { screens } = await response.json();
+  const { screens, kinds } = await response.json();
   const source = readFileSync(path.join(HERE, "project", "flows.ts"), "utf8");
   const all = [
     ...source.matchAll(
@@ -105,7 +105,7 @@ async function declared() {
       (here.has(edge.from) || here.has(edge.to)) &&
       !(here.has(edge.from) && here.has(edge.to)),
   );
-  return { screens, edges, half };
+  return { screens, edges, half, kinds };
 }
 
 const failures = [];
@@ -161,7 +161,46 @@ function checkLabels(edges) {
   }
 }
 
-const { screens, edges, half } = await declared();
+const { screens, edges, half, kinds: declaredKinds } = await declared();
+
+/**
+ * IS EVERY SCREEN IN A SECTION THIS CANVAS ACTUALLY HAS? — the check that stops a canvas drifting as it grows.
+ *
+ * `kind` is a free string, so a new screen filed under a section that nearly exists ("Domain setup" for an error
+ * state that belongs in "Domain trouble") drew a group heading, looked deliberate, and was wrong. The reviewer
+ * caught it and named the real problem, which is that it will keep happening: *"it's important that even after the
+ * canvas becomes reeeeally big, you put new screens in their proper places (groups or flows) or create new ones
+ * when needed, even if you start from a blank context but in the project with such a canvas already set up."*
+ *
+ * So the declaration may name its sections and say what belongs in each (`CanvasDeclaration.kinds`), and this
+ * refuses any screen filed outside them. Adding a section stays possible and becomes deliberate: declare it, with
+ * a sentence, and the check passes. Nothing is guessed from labels or ids — the only authority is the declaration.
+ *
+ * A canvas that declares nothing is not failed for it: the kinds in use are printed instead, so the next agent has
+ * the list in front of it and can adopt one rather than invent a neighbour.
+ */
+const kindsInUse = [...new Set(screens.map((screen) => screen.kind).filter(Boolean))].sort();
+if (Array.isArray(declaredKinds) && declaredKinds.length > 0) {
+  const known = new Set(declaredKinds.map((one) => one.id));
+  for (const screen of screens)
+    if (screen.kind && !known.has(screen.kind))
+      failures.push(
+        `${screen.id}: filed under "${screen.kind}", which this canvas does not declare. ` +
+          `Its sections are: ${declaredKinds.map((one) => `"${one.id}" (${one.whatBelongs})`).join("; ")}. ` +
+          `Move the screen into one of them, or add the section to \`kinds\` on purpose.`,
+      );
+  const unused = declaredKinds.filter((one) => !kindsInUse.includes(one.id));
+  if (unused.length > 0)
+    notes.push(
+      `declared section(s) with no screens in them: ${unused.map((one) => one.id).join(", ")}`,
+    );
+} else if (kindsInUse.length > 0) {
+  notes.push(
+    `this canvas does not declare its sections. The kinds in use are: ${kindsInUse.join(", ")}. ` +
+      `Add \`kinds\` to the declaration, each with a line saying what belongs in it, and a screen filed ` +
+      `outside them becomes a failure instead of a heading nobody notices.`,
+  );
+}
 /* An edge with one end on this canvas and the other on nothing: a renamed or deleted screen left an arrow behind. */
 for (const edge of half)
   failures.push(

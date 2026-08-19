@@ -331,6 +331,25 @@ export type CanvasDeclaration = {
   frameScale: number;
   flows: CanvasFlow[];
   /**
+   * WHAT THE SECTIONS ARE, AND WHAT BELONGS IN EACH ONE — so a screen added later cannot land in the wrong place.
+   *
+   * `CanvasScreen.kind` is a free string, which was fine while one person held the whole canvas in their head and
+   * wrong the moment the canvas outgrew a context window. An error state was filed under "Domain setup" beside the
+   * happy path, and the reviewer's note is the reason this field exists: *"This is an error state, so you put it in
+   * the wrong section. Btw, this might be a skill problem rather than just your mistake. so investigate please.
+   * it's important that even after the canvas becomes reeeeally big, you put new screens in their proper places
+   * (groups or flows) or create new ones when needed, even if you start from a blank context but in the project
+   * with such a canvas already set up."*
+   *
+   * Declaring them turns placement from a guess into a checked decision. `whatBelongs` is a sentence the next agent
+   * reads before choosing, and the oracle FAILS on any screen whose `kind` is not one of these — so inventing a
+   * section is possible (add it here, deliberately) and drifting into the wrong one is not.
+   *
+   * OPTIONAL, and a declaration without it behaves exactly as it always did: the oracle notes the kinds in use and
+   * asks for them to be declared, rather than failing a canvas that predates this field.
+   */
+  kinds?: { id: string; whatBelongs: string }[];
+  /**
    * Optional third view. A declaration with none simply has two tabs, which is every canvas built before
    * this existed.
    */
