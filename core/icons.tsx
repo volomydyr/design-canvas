@@ -144,6 +144,40 @@ export function IconOpenExternal(props: IconProps) {
  * Liked, on an exploration option. A thumb up, drawn to the same rules as everything else here: 24x24,
  * `currentColor`, stroke 1.75 — so its colour is the caller's and its size cannot be squashed by a flex parent.
  */
+/**
+ * THE TWO DEVICES, for the switch above the tabs and the jump under a frame.
+ *
+ * Icons rather than words, which is how the owner asked for the switch: *"there could be a switch between desktop
+ * and mobile done as a icon tab switch or something like that."* Drawn in the same 24-box, same stroke, as every
+ * other icon here, so nothing about them reads as imported.
+ */
+export function IconDesktop(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2.5" y="4" width="19" height="12.5" rx="1.75" />
+      <path d="M8.5 20.5h7M12 16.5v4" />
+    </Svg>
+  );
+}
+
+export function IconPhone(props: IconProps) {
+  return (
+    <Svg {...props}>
+      {/**
+       * A SPEAKER SLIT AT THE TOP AND A BUTTON AT THE BOTTOM, which took two goes.
+       *
+       * First the slit was at the top alone, which read as an unfinished rectangle. Then the owner asked for the
+       * line at the bottom instead, and on seeing it: *"revert the line in the mobile icon, move it back to the
+       * top and just add another element in the bottom which would be the like this circle at the bottom. So then
+       * hopefully it will start looking like a mobile icon."* Both elements, which is what every phone glyph has.
+       */}
+      <rect x="6.5" y="2" width="11" height="20" rx="2.5" />
+      <path d="M10.5 5h3" />
+      <circle cx="12" cy="18.75" r="1.15" />
+    </Svg>
+  );
+}
+
 export function IconLike(props: IconProps) {
   return (
     <Svg {...props}>

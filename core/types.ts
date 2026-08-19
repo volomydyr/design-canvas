@@ -14,6 +14,30 @@
  *  project adapter's business, and a project with no adapter simply never declares a state. */
 export const CANVAS_STATE_PARAM = "canvas";
 
+/**
+ * WHICH DEVICE A SCREEN IS, and it is a whole level of navigation rather than a property of one frame.
+ *
+ * The canvas photographed desktop only. The owner asked for phones because the projects it reviews are web
+ * projects: *"we could have the same for the mobile because so far I think the skill supports only desktop
+ * screenshots. But it would be great to support mobile ones as well … there could be a switch between desktop
+ * and mobile done as a icon tab switch or something like that before the three tabs for exploration groups and
+ * user flows. And it would just like work like another level of navigation. So if you're in desktop and you're
+ * looking at user flows or commenting, you're doing it for desktop only. If you're in mobile, you're doing it
+ * for mobile only."*
+ *
+ * So the device sits ABOVE the three views: it filters the flows, the groups, the explorations and therefore the
+ * comments, because a comment is left on a screen and a screen belongs to one device. Nothing about the review
+ * mechanism changes — which is the point of doing it this way rather than as a second canvas.
+ *
+ * THE SWITCH ONLY EXISTS WHERE BOTH DO. *"some projects might be completely desktop based or completely mobile
+ * based, but this one, the current one, it's a web project, so it supports both."* A declaration whose screens
+ * are all one device draws no switch at all, which is every canvas built before this type existed.
+ */
+export type CanvasDevice = "desktop" | "phone";
+
+/** The device a screen belongs to when it does not say. Every canvas built before devices existed is desktop. */
+export const DEFAULT_DEVICE: CanvasDevice = "desktop";
+
 /** One screen: a real route, and what it is. Adding a screen to the canvas is one entry. */
 export type CanvasScreen = {
   /** Stable id, recorded on every comment. Renaming it orphans that screen's comments. */
@@ -90,6 +114,30 @@ export type CanvasScreen = {
    * match. It is asserted, so a selector that stops matching fails the capture.
    */
   focus?: string;
+  /**
+   * WHICH DEVICE THIS SCREEN IS. Absent means desktop, so no existing declaration changes meaning.
+   *
+   * The viewport comes with the device — see `CanvasDeclaration.devices` — so a phone screen does NOT need its
+   * own `viewport`, and should not have one: that field is for a genuine one-off.
+   */
+  device?: CanvasDevice;
+  /* A PHONE SCREEN'S LABEL DOES NOT SAY "PHONE". The switch above the tabs is what says which device is being
+     reviewed, and every frame in the view is that device — the owner: *"in the mobile icon it's already obvious
+     that they are looking at the mobile designs."* A label names the surface, exactly as its desktop twin does. */
+  /**
+   * THE SAME SCREEN ON THE OTHER DEVICE, by id, which is what the jump button under a frame follows.
+   *
+   * The owner asked for it as a shortcut rather than a second navigation: *"you know how under the screens we
+   * have a button to open that screen in the real prototype on your local host. So what if we had a similar
+   * button … that would be kind of like a shortcut to open the same screen if it's available, but on the other
+   * device."*
+   *
+   * DECLARED ON EITHER SIDE, ONCE. The canvas resolves it both ways, so naming the phone from the desktop entry
+   * is enough and the two can never disagree about each other. Absent is the ordinary case and draws no button:
+   * *"you also need to consider that there might be no screenshots for some devices. Like, I mean, desktop might
+   * have designs that mobile doesn't have. mobile might have designs that desktop doesn't have."*
+   */
+  twin?: string;
   /**
    * Renders this one screen at a different viewport, e.g. a phone surface among desktop ones.
    *
@@ -261,8 +309,19 @@ export type CanvasExploration = {
 export type CanvasDeclaration = {
   title: string;
   note: string;
-  /** The viewport every screen is judged at unless it overrides it. */
+  /** The viewport every screen is judged at unless it overrides it. Also the desktop device's viewport. */
   viewport: CanvasViewport;
+  /**
+   * THE VIEWPORT EACH DEVICE IS PHOTOGRAPHED AT, for a declaration that has more than one.
+   *
+   * `desktop` falls back to `viewport` above, so a canvas that only adds phones writes one entry. A device with
+   * no entry and no screens simply does not exist on this canvas.
+   *
+   * A phone here is a real device size (390 by 844 is an iPhone 15), and the same rule applies as everywhere
+   * else: the height is what the page is photographed at when it fits, and a page that runs past the fold is
+   * captured whole regardless.
+   */
+  devices?: Partial<Record<CanvasDevice, CanvasViewport>>;
   /**
    * How big a frame is drawn on the canvas, as a fraction of the size the page really is. 0.8 puts a
    * 1440px desktop page on the canvas at ~1150px: a page being looked at, not a thumbnail of one. The
@@ -344,6 +403,29 @@ export function canvasHidden(): boolean {
  */
 export const CANVAS_PUBLISHED =
   process.env.NODE_ENV === "production" && CANVAS_VIEW_ONLY;
+
+/** The viewport a screen is photographed at: its own, else its device's, else the canvas's. */
+export function viewportFor(
+  screen: CanvasScreen,
+  declaration: CanvasDeclaration,
+): CanvasViewport {
+  if (screen.viewport) return screen.viewport;
+  const device = screen.device ?? DEFAULT_DEVICE;
+  return declaration.devices?.[device] ?? declaration.viewport;
+}
+
+/**
+ * WHICH DEVICES THIS CANVAS ACTUALLY HAS, in a fixed order, derived from the screens rather than declared.
+ *
+ * Derived, because a `devices` map with an entry nobody uses would draw a switch to an empty canvas, and the
+ * owner's rule is that the switch exists only where both do. One device means no switch.
+ */
+export function devicesOf(declaration: CanvasDeclaration): CanvasDevice[] {
+  const seen = new Set(
+    allScreens(declaration).map(({ screen }) => screen.device ?? DEFAULT_DEVICE),
+  );
+  return (["desktop", "phone"] as CanvasDevice[]).filter((one) => seen.has(one));
+}
 
 export function allScreens(declaration: CanvasDeclaration): Array<{
   screen: CanvasScreen;

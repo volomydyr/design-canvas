@@ -27,6 +27,7 @@ import type {
   CanvasFlow,
   CanvasScreen,
 } from "./types";
+import { DEFAULT_DEVICE, viewportFor } from "./types";
 
 /* ---------------------------------------------------------------- world metrics
    World units are canvas pixels: at zoom 1 one world unit is one screen pixel. These are geometry, not
@@ -145,11 +146,41 @@ export function frameSize(
   captured?: (id: string) => { w: number; h: number } | undefined,
 ): { w: number; h: number } {
   const shot = captured?.(screen.id);
-  const view = shot ?? screen.viewport ?? declaration.viewport;
+  const view = shot ?? viewportFor(screen, declaration);
   return {
     w: Math.round(view.w * declaration.frameScale),
     h: Math.round(view.h * declaration.frameScale),
   };
+}
+
+/**
+ * HOW WIDE A PHONE FRAME'S CAPTION AND FOOT ARE ALLOWED TO BE, in world units.
+ *
+ * A phone frame is about 312 world pixels wide, and everything a frame carries around it was designed against a
+ * desktop's 1152: the name at 42, the line under it, the Open pill, the source chips, and in an exploration the
+ * two verdicts. At 312 all of that stacks into a column of wrapped fragments. The owner named the problem
+ * exactly: *"the structure of the mobile screenshot has to be slightly rethinked because it won't be able to
+ * cover everything that the desktop screenshot currently does … So we need to think how to adapt it on the
+ * canvas so that we don't lose any functionality and we don't make it look weird or very different from the
+ * desktop one, but at the same time we make it fit properly."*
+ *
+ * NOTHING IS DROPPED AND NOTHING SHRINKS. The chrome keeps its type scale and its controls, and is simply
+ * allowed to be wider than the picture it belongs to — which is space a tall narrow frame has going spare
+ * anyway. The layout reserves it here, in the same function the frame reads, so the two cannot disagree; a
+ * caption that overhung a column it was not measured into is how frames end up printed over each other.
+ */
+export const PHONE_CHROME_W = 700;
+
+/** The horizontal room a screen occupies: its picture, or its chrome when the chrome is wider. */
+export function chromeWidth(
+  screen: CanvasScreen,
+  declaration: CanvasDeclaration,
+  captured?: (id: string) => { w: number; h: number } | undefined,
+): number {
+  const frame = frameSize(screen, declaration, captured).w;
+  return (screen.device ?? DEFAULT_DEVICE) === "phone"
+    ? Math.max(frame, PHONE_CHROME_W)
+    : frame;
 }
 
 /** How the layout is told what was captured. Absent for a project with nothing captured yet. */
@@ -286,7 +317,12 @@ function placeNodes(
     const size = sizes.get(screen.id)!;
     const column = rank.get(screen.id) ?? 0;
     const line = row.get(screen.id) ?? 0;
-    columnWidth.set(column, Math.max(columnWidth.get(column) ?? 0, size.w));
+    /* The CHROME's width, not the picture's: a phone frame is narrower than the name and the controls it
+       carries, and a column measured on the picture alone would have them printed over its neighbour. */
+    columnWidth.set(
+      column,
+      Math.max(columnWidth.get(column) ?? 0, chromeWidth(screen, declaration, captured)),
+    );
     rowHeight.set(line, Math.max(rowHeight.get(line) ?? 0, size.h));
   }
 
@@ -602,7 +638,7 @@ export function layoutKinds(
         rank: index,
         row: 0,
       };
-      x += size.w + KIND_GAP;
+      x += Math.max(size.w, chromeWidth(screen, declaration, captured)) + KIND_GAP;
       tallest = Math.max(tallest, size.h);
       return node;
     });
@@ -689,7 +725,7 @@ export function layoutExplorations(
         row: 0,
       });
       /* The column's own width is the widest thing in it, so the next direction never lands on this one. */
-      let columnW = size.w;
+      let columnW = Math.max(size.w, chromeWidth(main, declaration, captured));
       let y = top + size.h + FOOT_SPACE + CAPTION_SPACE;
       supportersOf(main.id).forEach((support, depth) => {
         const supportSize = frameSize(support, declaration, captured);
@@ -704,7 +740,11 @@ export function layoutExplorations(
           row: depth + 1,
           supporting: true,
         });
-        columnW = Math.max(columnW, supportSize.w);
+        columnW = Math.max(
+          columnW,
+          supportSize.w,
+          chromeWidth(support, declaration, captured),
+        );
         y += supportSize.h + FOOT_SPACE + CAPTION_SPACE;
       });
       x += columnW + KIND_GAP;

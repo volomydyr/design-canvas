@@ -29,11 +29,14 @@ import {
   IconClose,
   IconDislike,
   IconLike,
+  IconDesktop,
   IconOpenExternal,
+  IconPhone,
   IconSpinner,
 } from "./icons";
 import type {
   CanvasComment,
+  CanvasDevice,
   CanvasRegion,
   CanvasScreen,
   CanvasShot,
@@ -226,9 +229,29 @@ export function CanvasFrame({
   onFeedback,
   openPin,
   onOpenPin,
+  onTwin,
+  chromeW,
 }: {
   /** Which canvas this frame belongs to. Namespaces the picture it asks for — see `src`. */
   canvas: string;
+  /**
+   * THE SAME SCREEN ON THE OTHER DEVICE, when there is one. Absent draws no control.
+   *
+   * The owner asked for it beside Open, and as a shortcut rather than a second navigation: *"what if we had a
+   * similar button to kind of, that would be kind of like a shortcut to open the same screen if it's available,
+   * but on the other device. So if you're looking at a desktop screen, there might be like a button very similar
+   * to open, but it would be just a icon that you can click and it would show you the same screenshot on the
+   * canvas but for mobile."* So it is an icon, it sits with Open, and it moves the canvas rather than the page.
+   */
+  onTwin?: { device: CanvasDevice; go: () => void } | null;
+  /**
+   * How wide this frame's caption and foot may be, in world units, which is not always the picture's width.
+   *
+   * A phone frame is about 312 wide and its chrome was built against a desktop's 1152. Rather than shrink the
+   * type or drop a control, the chrome is allowed to be wider than the picture and the layout reserves the room
+   * (`chromeWidth` in graph-layout.ts). Absent means the picture's own width, which is every desktop frame.
+   */
+  chromeW?: number;
   screen: CanvasScreen;
   /** What was captured for this screen, or null when it has never been captured. */
   shot: CanvasShot | null;
@@ -589,8 +612,14 @@ export function CanvasFrame({
        */}
       {showTitle ? (
         <figcaption
-          className="absolute inset-x-0 bottom-full flex items-center text-white"
-          style={{ marginBottom: CAPTION_GAP, gap: 12 }}
+          /* `left-0` and a width rather than `inset-x-0`: a phone frame's chrome is wider than its picture, and
+             the layout has reserved that room. A desktop frame gets the picture's width and nothing changes. */
+          className="absolute bottom-full left-0 flex items-center text-white"
+          style={{
+            marginBottom: CAPTION_GAP,
+            gap: 12,
+            width: chromeW ?? "100%",
+          }}
           title={screen.note}
         >
           {/**
@@ -703,8 +732,8 @@ export function CanvasFrame({
        * whoever has to open it.
        */}
       <figcaption
-        className="absolute inset-x-0 top-full flex items-center"
-        style={{ marginTop: FOOT_GAP, gap: 12 }}
+        className="absolute left-0 top-full flex items-center"
+        style={{ marginTop: FOOT_GAP, gap: 12, width: chromeW ?? "100%" }}
         data-canvas-chrome=""
       >
         <a
@@ -727,6 +756,52 @@ export function CanvasFrame({
           Open
           <IconOpenExternal size={META_SIZE + 1} />
         </a>
+
+        {/**
+         * THE SAME SCREEN ON THE OTHER DEVICE, and it moves the canvas rather than opening anything.
+         *
+         * Beside Open because it answers the neighbouring question — *"a button very similar to open, but it would
+         * be just a icon that you can click and it would show you the same screenshot on the canvas but for
+         * mobile"*. An icon and no word, so a phone frame's foot does not grow a second pill, and outlined rather
+         * than solid so Open stays the one filled thing under a frame.
+         *
+         * Only rendered when the declaration names a twin: a design that exists on one device only has no button,
+         * which is the ordinary case in both directions.
+         */}
+        {onTwin ? (
+          /**
+           * WITH THE CANVAS'S OWN TOOLTIP, not just a `title`.
+           *
+           * An icon with no word needs saying out loud, and the owner asked for it after using it: *"when I hover
+           * over the phone or desktop action below the screenshot it should show me a tooltip that says something
+           * like show on desktop show on mobile, because it might be not self explanatory without it."* `mark={0}`
+           * because the button is already visibly pressable, which is this component's own rule for that case.
+           */
+          <CanvasTooltip
+            mark={0}
+            title={onTwin.device === "phone" ? "Show on mobile" : "Show on desktop"}
+            label={
+              <button
+                type="button"
+                onClick={onTwin.go}
+                className="inline-flex shrink-0 items-center justify-center rounded-full font-medium text-white ring-1 ring-white/[0.22] transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/[0.12]"
+                style={{ height: BUTTON_H, width: BUTTON_H, lineHeight: 1 }}
+                data-canvas-twin={onTwin.device}
+              >
+                {onTwin.device === "phone" ? (
+                  /* A touch bigger than the monitor, for the same reason as in the toolbar. */
+                  <IconPhone size={META_SIZE + 4} />
+                ) : (
+                  <IconDesktop size={META_SIZE + 2} />
+                )}
+              </button>
+            }
+          >
+            {onTwin.device === "phone"
+              ? "The same screen photographed at a phone's size. The canvas switches device and lands on it."
+              : "The same screen photographed at a desktop's size. The canvas switches device and lands on it."}
+          </CanvasTooltip>
+        ) : null}
 
         {failed ? (
           <span

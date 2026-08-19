@@ -184,11 +184,34 @@ checkLabels(edges);
  * of frames to compare rather than a journey. `exploration` is the third tab. Counting one number against every
  * view is how a canvas passes its checks while a whole section is missing from a view that should hold it.
  */
-const flowScreens = screens.filter((screen) => screen.view === "flow");
-const kindScreens = screens.filter(
+/**
+ * AND EVERY POPULATION IS ONE DEVICE'S, because the canvas draws one device at a time.
+ *
+ * The device switch is a level above the three views (see `CanvasDevice`), so "every declared screen" stopped
+ * being "every drawn frame" the moment a phone was declared: the first one made four count assertions fail at
+ * once, all of them correctly measuring a canvas that was showing desktop. The checks below run against the
+ * device the canvas is actually showing, which is the one the switch opens on — the first device the declaration
+ * has. A canvas with one device is unaffected, which is every canvas built before this.
+ *
+ * WHAT THIS DOES NOT DO, said out loud rather than left as a silent gap: it does not walk the other devices. The
+ * frames, pictures and groups of a second device are captured and oracled by the capture run's own claims, and
+ * asserting the canvas draws them too would mean driving the switch and re-running the whole DOM pass per
+ * device. That is worth doing and it is not done here.
+ */
+const CANVAS_DEVICE = screens.length > 0 ? (screens[0].device ?? "desktop") : "desktop";
+const onDevice = screens.filter(
+  (screen) => (screen.device ?? "desktop") === CANVAS_DEVICE,
+);
+if (onDevice.length !== screens.length)
+  console.log(
+    `${screens.length} screens declared across devices; asserting the ${onDevice.length} on "${CANVAS_DEVICE}", which is what the canvas opens on`,
+  );
+
+const flowScreens = onDevice.filter((screen) => screen.view === "flow");
+const kindScreens = onDevice.filter(
   (screen) => screen.view === "flow" || screen.view === "kinds",
 );
-const exploreScreens = screens.filter(
+const exploreScreens = onDevice.filter(
   (screen) => screen.view === "exploration",
 );
 const views = exploreScreens.length > 0 ? ["flows", "kinds", "explore"] : ["flows", "kinds"];
@@ -203,14 +226,20 @@ const views = exploreScreens.length > 0 ? ["flows", "kinds", "explore"] : ["flow
  * they supposed to show, do we really need all of them?" A state worth its own tile gets its own pinned
  * state; if it cannot have one, it does not need a tile.
  */
+/**
+ * A TWIN IS NOT A DUPLICATE. Two screens at one address on DIFFERENT DEVICES are the same design answered
+ * twice, which is the whole point of `CanvasScreen.twin` — the first phone frame ever declared failed this
+ * check against its own desktop counterpart. So the address is keyed with the device.
+ */
 const byUrl = new Map();
 for (const screen of screens) {
-  const seen = byUrl.get(screen.url);
+  const key = `${screen.device ?? "desktop"} ${screen.url}`;
+  const seen = byUrl.get(key);
   if (seen)
     failures.push(
       `${screen.id} and ${seen} are both ${screen.url}, so they are one picture twice`,
     );
-  else byUrl.set(screen.url, screen.id);
+  else byUrl.set(key, screen.id);
 }
 
 /* ------------------------------------------------- what the capture run proved */
@@ -408,7 +437,8 @@ await page
 /* Each frame checked while the view that draws it is the one on screen: an exploration direction has no frame in
    the grouped view, so a single pass over every declared screen would report half of them missing. */
 let inView = null;
-for (const screen of screens) {
+/* One device's frames, for the reason on `CANVAS_DEVICE`: the others are not drawn while this one is. */
+for (const screen of onDevice) {
   const wants = screen.view === "exploration" ? "explore" : "kinds";
   /**
    * SWITCHING THE VIEW IS NOT INSTANT, and jumping in the same tick lands on the OLD layout.
@@ -502,7 +532,7 @@ for (const screen of screens) {
     );
 }
 console.log(
-  `${screens.length} pictures load on the canvas at their captured size`,
+  `${onDevice.length} pictures load on the canvas at their captured size`,
 );
 
 /* ----------------------------------------------------------------- the edges */

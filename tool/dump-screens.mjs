@@ -122,11 +122,29 @@ const groups = [
   })),
 ];
 
+/**
+ * THE VIEWPORT A SCREEN'S DEVICE IS PHOTOGRAPHED AT, resolved here as well as in the route.
+ *
+ * There are two ways the capture learns what to photograph: the screens endpoint when it runs against a dev
+ * server, and THIS FILE when it runs against a production build — which is how `capture-run.mjs` always runs it.
+ * `...screen` carried `device` and `twin` for free and this one field was computed rather than declared, so a
+ * phone screen went through a production capture at the desktop viewport and came out 1440 wide, identical to
+ * its desktop twin. Measured on the first phone frame ever declared.
+ *
+ * `viewportFor` in core/types.ts is the source of truth for this rule; these three lines are it, inlined,
+ * because this script runs under bare node with no TypeScript in reach.
+ */
+const deviceViewportFor = (screen) =>
+  screen.viewport ??
+  declaration.devices?.[screen.device ?? "desktop"] ??
+  declaration.viewport;
+
 const screens = groups.flatMap((group) =>
   group.screens.map((screen) => ({
     ...screen,
     flowId: group.id,
     view: group.view,
+    deviceViewport: deviceViewportFor(screen),
     url: screenUrl(screen.route, screen.state),
     /* Normalised the way the route normalises it: capture treats both claim fields as lists. */
     expect: screen.expect

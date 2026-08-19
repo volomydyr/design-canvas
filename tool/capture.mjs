@@ -250,6 +250,10 @@ function stampOf(screen) {
           screen.expectSelector ?? null,
           screen.focus ?? null,
           screen.viewport ?? null,
+          /* THE DEVICE IS PART OF WHAT THE PICTURE IS. Without these two a screen moved from desktop to phone
+             kept its desktop shot, because nothing else about the declaration changed. */
+          screen.device ?? null,
+          screen.deviceViewport ?? null,
         ]),
       )
       .digest("hex")
@@ -723,11 +727,24 @@ async function captureOne(screen, secondPass = false) {
    * Set on the page rather than by building a second browser context: one context, one set of cookies and one
    * cache, and a page's viewport is per-page anyway.
    */
-  if (screen.viewport?.w && screen.viewport?.h)
-    await page.setViewportSize({
-      width: screen.viewport.w,
-      height: screen.viewport.h,
-    });
+  /* A screen's own override wins; otherwise its DEVICE's viewport, which the screens endpoint has already
+     resolved (`deviceViewport`). A phone is photographed at a phone's size without any screen having to name it,
+     which is the whole point of declaring a device rather than a viewport per frame. */
+  const want =
+    screen.viewport?.w && screen.viewport?.h
+      ? screen.viewport
+      : screen.deviceViewport?.w && screen.deviceViewport?.h
+        ? screen.deviceViewport
+        : null;
+  if (want) await page.setViewportSize({ width: want.w, height: want.h });
+  /**
+   * AND EVERY MEASUREMENT BELOW IS AGAINST THIS SCREEN'S VIEWPORT, not the canvas's.
+   *
+   * `viewport` is the canvas-wide one. A phone at 390 by 844 judged against a desktop's 900 would be called a
+   * short page, cropped to 900, and recorded as 900 tall — a frame 56px taller than the device it is meant to be.
+   * One name, resolved once, used by the whole-page rule and by the shot's own height.
+   */
+  const shotViewport = want ?? viewport;
   const url = `${base}${screen.url}`;
   const started = Date.now();
   /* Two different waits can run out, and only one of them is a problem. A page that never finishes loading
@@ -779,20 +796,21 @@ async function captureOne(screen, secondPass = false) {
         inner = Math.max(inner, node.scrollHeight - node.clientHeight);
       }
       return { doc: document.documentElement.scrollHeight, inner };
-    }, viewport.h);
-    const pageHeight = Math.max(scrolls.doc, viewport.h + scrolls.inner);
+    }, shotViewport.h);
+    const pageHeight = Math.max(scrolls.doc, shotViewport.h + scrolls.inner);
     const wholePage =
-      CAPTURE_WHOLE_PAGES && pageHeight > viewport.h * LONG_PAGE_SLACK;
-    const shotH = wholePage ? Math.min(pageHeight, MAX_PAGE_H) : viewport.h;
+      CAPTURE_WHOLE_PAGES && pageHeight > shotViewport.h * LONG_PAGE_SLACK;
+    const shotH = wholePage ? Math.min(pageHeight, MAX_PAGE_H) : shotViewport.h;
     /**
      * AN INNER SCROLLER IS OPENED BY GROWING THE WINDOW, not by editing its overflow. The column is sized to the
      * viewport, so a taller viewport is a taller column and the page lays itself out exactly as it would on a
      * tall monitor. Forcing `overflow: visible` instead reflows a flex column into something the design never
      * is — and a frame showing a state no user can see is the one thing this tool must not produce.
      */
-    const grown = wholePage && scrolls.inner > 0 && scrolls.doc <= viewport.h;
+    const grown =
+      wholePage && scrolls.inner > 0 && scrolls.doc <= shotViewport.h;
     if (grown) {
-      await page.setViewportSize({ width: viewport.w, height: shotH });
+      await page.setViewportSize({ width: shotViewport.w, height: shotH });
       await page.waitForTimeout(MIN_SETTLE_MS);
     }
     if (wholePage) {
@@ -1024,7 +1042,9 @@ async function captureOne(screen, secondPass = false) {
            entirely on screen, and asking for more than the viewport it now has photographs a band of empty
            background under it. */
         captureBeyondViewport: wholePage && !grown,
-        clip: { x: 0, y: 0, width: viewport.w, height: shotH, scale: 1 },
+        /* THIS screen's width: a phone clipped to a desktop's 1440 would be photographed with 1050px of empty
+           page beside it, and the manifest would record that as the frame's width. */
+        clip: { x: 0, y: 0, width: shotViewport.w, height: shotH, scale: 1 },
       });
       return Buffer.from(data, "base64");
     };
@@ -1096,7 +1116,11 @@ async function captureOne(screen, secondPass = false) {
       screenId: screen.id,
       url: screen.url,
       file,
-      w: viewport.w,
+      /* THIS screen's width, not the canvas's. It was `viewport.w`, which is the desktop width, so the first
+         phone frame ever captured recorded itself as 1440 wide and the canvas drew it as a desktop frame with
+         the page squeezed into a corner of it. The picture itself was already clipped correctly; only the
+         receipt was wrong, which is the worse of the two because the layout believes the receipt. */
+      w: shotViewport.w,
       h: shotH,
       /* Said out loud in the manifest: this one is the whole page, that one is one screen of a fixed-height
          surface. The canvas draws each frame at the size it was actually captured at. */

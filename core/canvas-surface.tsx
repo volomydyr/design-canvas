@@ -58,12 +58,26 @@ export type Transform = { x: number; y: number; z: number };
 export type CanvasSurfaceHandle = {
   /** Frame a world box, choosing the zoom that fits it. */
   frame: (box: Box) => void;
-  /** Centre a world box at a given zoom, for looking at one screen rather than a whole diagram. */
-  centre: (box: Box, zoom: number) => void;
+  /**
+   * Put a world box on screen at a given zoom: centred, or with its top near the top of the viewport.
+   *
+   * `top` is for landing on ONE screen — a jump between devices, a step to a comment — where the name above the
+   * frame is part of knowing where you have arrived.
+   */
+  centre: (box: Box, zoom: number, align?: "centre" | "top") => void;
   zoomBy: (factor: number) => void;
   /** What is on screen right now. Read, never written. */
   read: () => Transform;
 };
+
+/**
+ * How much world space is left above a box that is landed on with `align: "top"`.
+ *
+ * A frame's caption sits above it in world units (`CAPTION_SPACE` is 90 in the layout), so landing the box's own
+ * top at the very top of the screen would push the name out of view — which is the one thing the owner asked to
+ * be able to see when he lands.
+ */
+const TOP_LEAD = 150;
 
 export const CanvasSurface = forwardRef<
   CanvasSurfaceHandle,
@@ -206,13 +220,27 @@ export const CanvasSurface = forwardRef<
   };
 
   const centre = useCallback(
-    (box: Box, zoom: number) => {
+    (box: Box, zoom: number, align: "centre" | "top" = "centre") => {
       const { w, h } = viewport();
       const z = clampZoom(zoom);
       target.current = {
         z,
         x: w / 2 - (box.x + box.w / 2) * z,
-        y: h / 2 - (box.y + box.h / 2) * z,
+        /**
+         * `top` PUTS THE BOX'S TOP NEAR THE TOP OF THE SCREEN, with room above it for the caption.
+         *
+         * Landing on the middle of a tall frame is disorienting: the owner, on the jump between devices, *"I get
+         * to the center of the screenshot when in reality I should get to the top of it. So I could see the top
+         * of the screenshot and the name of the screenshot. Then it will make more sense than just seeing the
+         * very center of the screenshot, which confuses a bit because you can't understand like what is
+         * happening, why did I get moved somewhere in a random place."*
+         *
+         * `TOP_LEAD` is world space above the box, which is where the caption is drawn, plus air.
+         */
+        y:
+          align === "top"
+            ? TOP_LEAD * z - box.y * z
+            : h / 2 - (box.y + box.h / 2) * z,
       };
       run();
     },

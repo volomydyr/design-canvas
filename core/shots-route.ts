@@ -32,6 +32,8 @@ import {
   type CanvasDeclaration,
   type CanvasRegistry,
   type CanvasShotManifest,
+  DEFAULT_DEVICE,
+  viewportFor,
 } from "./types";
 
 export const runtime = "nodejs";
@@ -160,6 +162,18 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
              * screen does not ask, so the capture falls back to the canvas-wide viewport above.
              */
             viewport: screen.viewport ?? null,
+            /**
+             * THE DEVICE, AND THE VIEWPORT THAT COMES WITH IT.
+             *
+             * The capture reads its screens from here, so a device declared and not served is a device the
+             * capture never hears about — the same trap `viewport` fell into above, one field over. `viewport`
+             * stays the screen's own override; `deviceViewport` is what its device is photographed at, already
+             * resolved, so the capture does not need the declaration's `devices` map as well.
+             */
+            device: screen.device ?? DEFAULT_DEVICE,
+            deviceViewport: viewportFor(screen, declaration),
+            /* So the oracle can assert a twin resolves to a screen that exists. */
+            twin: screen.twin ?? null,
             /* Served so the oracle can assert every one of them still exists on disk. */
             source: screen.source ?? [],
           })),

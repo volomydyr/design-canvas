@@ -57,8 +57,10 @@ import {
   IconCheck,
   IconComment,
   IconCopy,
+  IconDesktop,
   IconLeft,
   IconMinus,
+  IconPhone,
   IconPlus,
   IconRight,
   IconTrash,
@@ -76,6 +78,7 @@ import {
   verdictsIn,
 } from "./comments-client";
 import {
+  chromeWidth,
   FLOW_GAP,
   type LaidOutNode,
   layoutExplorations,
@@ -87,8 +90,12 @@ import {
   CANVAS_PUBLISHED,
   type CanvasComment,
   type CanvasDeclaration,
+  type CanvasDevice,
+  type CanvasScreen,
   type CanvasShot,
   type CanvasVerdict,
+  DEFAULT_DEVICE,
+  devicesOf,
 } from "./types";
 
 /**
@@ -296,6 +303,20 @@ export function CanvasView({
   const [view, setView] = useState<ViewMode>(
     (declaration.explorations ?? []).length > 0 ? "explore" : "kinds",
   );
+  /**
+   * WHICH DEVICE IS BEING REVIEWED, which is a level above the three views.
+   *
+   * Derived from the declaration rather than assumed: a canvas whose screens are all desktop has one device, no
+   * switch, and behaves exactly as it did before devices existed. Opening on the first one puts desktop first
+   * where both exist, because that is where the work starts on a web project.
+   */
+  const devices = useMemo(() => devicesOf(declaration), [declaration]);
+  const [device, setDevice] = useState<CanvasDevice>(devices[0] ?? "desktop");
+  /**
+   * A JUMP CANNOT CENTRE WHAT IS NOT LAID OUT YET: switching device rebuilds the layout, so the target is held
+   * here and landed on by the effect further down once it exists. It also tells the re-fit to stand aside.
+   */
+  const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const [comments, setComments] = useState<CanvasComment[]>([]);
   /** Which file the comments were read from, for the hand-off to name. See `CanvasCommentFile.file`. */
   const [commentsFile, setCommentsFile] = useState(
@@ -774,11 +795,43 @@ export function CanvasView({
     [shots],
   );
 
+  /**
+   * THE DECLARATION AS THIS DEVICE SEES IT, which is what every view is laid out from.
+   *
+   * The device filters the screens, so it filters the groups and the edges with them: a flow with nothing on this
+   * device is not an empty flow, it is not this device's flow at all, and an edge with one end missing is not
+   * drawable. Filtering here rather than in three layout functions is what keeps the views from disagreeing about
+   * what exists — and it means the comment counts, the review bar and the hand-off are all scoped to the device
+   * for free, because every one of them starts from the screens on screen.
+   */
+  const forDevice = useMemo<CanvasDeclaration>(() => {
+    if (devices.length < 2) return declaration;
+    const mine = (screen: CanvasScreen) =>
+      (screen.device ?? DEFAULT_DEVICE) === device;
+    const flows = declaration.flows
+      .map((flow) => {
+        const screens = flow.screens.filter(mine);
+        const ids = new Set(screens.map((one) => one.id));
+        return {
+          ...flow,
+          screens,
+          edges: flow.edges.filter(
+            (edge) => ids.has(edge.from) && ids.has(edge.to),
+          ),
+        };
+      })
+      .filter((flow) => flow.screens.length > 0);
+    const explorations = (declaration.explorations ?? [])
+      .map((one) => ({ ...one, screens: one.screens.filter(mine) }))
+      .filter((one) => one.screens.length > 0);
+    return { ...declaration, flows, explorations };
+  }, [declaration, devices.length, device]);
+
   const layout = useMemo(() => {
-    if (view === "flows") return layoutFlows(declaration, captured);
-    if (view === "explore") return layoutExplorations(declaration, captured);
-    return layoutKinds(declaration, captured);
-  }, [view, declaration, captured]);
+    if (view === "flows") return layoutFlows(forDevice, captured);
+    if (view === "explore") return layoutExplorations(forDevice, captured);
+    return layoutKinds(forDevice, captured);
+  }, [view, forDevice, captured]);
 
 
   /**
@@ -827,15 +880,28 @@ export function CanvasView({
    * is far out rather than broken. Skipped on the first render — the surface does its own opening framing,
    * which is deliberately tighter than a fit, and doing both would land at fit and lose it.
    */
-  const framedView = useRef<ViewMode | null>(null);
+  /**
+   * KEYED ON THE DEVICE AS WELL AS THE VIEW, because switching device is the same kind of move.
+   *
+   * The owner: *"when I switch between desktop and mobile modes, I should get the same treatment as when I switch
+   * between tabs, meaning that I should get to the center of the whole canvas and fit to the screen."* And the
+   * geometry says the same thing: the two devices are laid out independently, so a transform that framed a
+   * desktop flow points at nothing on a canvas of phones.
+   */
+  const framedView = useRef<string | null>(null);
   useEffect(() => {
     if (layout.box.w === 0) return;
+    const key = `${view}:${device}`;
     if (framedView.current === null) {
-      framedView.current = view;
+      framedView.current = key;
       return;
     }
-    if (framedView.current === view) return;
-    framedView.current = view;
+    if (framedView.current === key) return;
+    framedView.current = key;
+    /* A JUMP IS NOT A SWITCH. The device jump under a frame changes device on purpose and then lands on one
+       screen; fitting the whole canvas first would throw the reviewer out to 7% and back. `pendingFocus` is the
+       flag that says this move already has a destination. */
+    if (pendingFocus) return;
     /**
      * A NEW TAB FITS, WHATEVER THAT COSTS IN ZOOM.
      *
@@ -849,7 +915,7 @@ export function CanvasView({
      * frames lands close in and a tab holding many lands far out. Same rule, two outcomes.
      */
     surface.current?.frame(layout.box);
-  }, [view, layout]);
+  }, [view, device, layout, pendingFocus]);
 
   /** The number on a pin is its place in the whole list, so "number 6" means one thing everywhere. */
   /* Numbered off the VISIBLE set, so a pin inside an open undo window is gone from the canvas rather than
@@ -974,7 +1040,13 @@ export function CanvasView({
     [canvas],
   );
 
-  /** Bring one screen into the middle of the canvas at reading size. */
+  /**
+   * Bring one screen onto the canvas at reading size, landing on its TOP rather than its middle.
+   *
+   * A frame is often several viewports tall, and the middle of one is a place with no name on it. The owner, on
+   * arriving there after a device jump: *"I should get to the top of it. So I could see the top of the screenshot
+   * and the name of the screenshot."* The same is true of stepping to a comment, so both use this.
+   */
   const goToScreen = useCallback(
     (screenId: string) => {
       const node = layout.groups
@@ -984,10 +1056,44 @@ export function CanvasView({
       surface.current?.centre(
         { x: node.x, y: node.y, w: node.w, h: node.h },
         1,
+        "top",
       );
     },
     [layout],
   );
+
+  /**
+   * THE SAME SCREEN ON THE OTHER DEVICE, resolved in both directions from one declaration.
+   *
+   * `twin` is declared once, on either side — naming the phone from the desktop entry is enough — so this reads
+   * the map forwards and backwards. A screen with no twin gets no entry and therefore no button, which is the
+   * ordinary case: *"desktop might have designs that mobile doesn't have. mobile might have designs that desktop
+   * doesn't have."*
+   */
+  const twinOf = useMemo(() => {
+    const all = allScreens(declaration).map(({ screen }) => screen);
+    const byId = new Map(all.map((one) => [one.id, one]));
+    const pairs = new Map<string, CanvasScreen>();
+    for (const one of all) {
+      if (!one.twin) continue;
+      const other = byId.get(one.twin);
+      if (!other) continue;
+      pairs.set(one.id, other);
+      /* The reverse, unless that side named its own twin and disagrees — in which case its own word wins. */
+      if (!pairs.has(other.id)) pairs.set(other.id, one);
+    }
+    return pairs;
+  }, [declaration]);
+
+  useEffect(() => {
+    if (!pendingFocus) return;
+    const here = layout.groups
+      .flatMap((group) => group.nodes)
+      .some((one) => one.screen.id === pendingFocus);
+    if (!here) return;
+    goToScreen(pendingFocus);
+    setPendingFocus(null);
+  }, [pendingFocus, layout, goToScreen]);
 
   /** Step to the nth comment awaiting review. Wraps at both ends: a dead end needs a disabled state, which
    *  is one more thing on screen. */
@@ -1084,6 +1190,26 @@ export function CanvasView({
         manifestLoaded={shots !== null}
         scale={declaration.frameScale}
         pins={pinsFor(node.screen.id)}
+        /* Wider than the picture for a phone, so nothing under the frame has to shrink — see `chromeWidth`. */
+        chromeW={chromeWidth(node.screen, forDevice, captured)}
+        /**
+         * The jump to the other device, when the declaration names one. It switches the device and centres the
+         * twin once the new layout exists (`pendingFocus`), which is what makes it read as moving the canvas
+         * rather than opening a second thing.
+         */
+        onTwin={(() => {
+          const other = twinOf.get(node.screen.id);
+          if (!other || devices.length < 2) return null;
+          const otherDevice = other.device ?? DEFAULT_DEVICE;
+          if (otherDevice === device) return null;
+          return {
+            device: otherDevice,
+            go: () => {
+              setDevice(otherDevice);
+              setPendingFocus(other.id);
+            },
+          };
+        })()}
         /* Notes, not verdicts: the next pin's number has to match the numbering above. */
         nextNumber={numbered.length + 1}
         /* Titles belong to the grouped view; in a flow the arrows explain what happened. In an exploration the
@@ -1255,6 +1381,44 @@ export function CanvasView({
         data-canvas-chrome=""
         data-canvas-toolbar=""
       >
+        {/**
+         * THE DEVICE, BEFORE THE VIEWS, because it is a level above them.
+         *
+         * The owner's shape: *"there could be a switch between desktop and mobile done as a icon tab switch or
+         * something like that before the three tabs for exploration groups and user flows. And it would just like
+         * work like another level of navigation."* Icons rather than words, so the bar does not grow two more word
+         * pills; the same 32px control and the same white active pill as the tabs, so it reads as one bar.
+         *
+         * ABSENT ON A ONE-DEVICE CANVAS, which is every canvas built before this and every project that is only
+         * one of the two.
+         */}
+        {devices.length > 1 ? (
+          <>
+            {devices.map((one) => (
+              <button
+                key={one}
+                type="button"
+                aria-pressed={device === one}
+                aria-label={one === "phone" ? "Phone screens" : "Desktop screens"}
+                title={one === "phone" ? "Phone screens" : "Desktop screens"}
+                onClick={() => setDevice(one)}
+                className={cn(
+                  BAR_ITEM,
+                  BAR_SQUARE,
+                  device === one ? BAR_TAB_ON : BAR_QUIET,
+                )}
+                data-canvas-device={one}
+              >
+                {/* The phone glyph is drawn tall and narrow, so at an equal size it reads smaller than the
+                    monitor beside it: *"the phone one can be, the SVG can be just slightly bigger, just a
+                    bit."* */}
+                {one === "phone" ? <IconPhone size={17} /> : <IconDesktop size={15} />}
+              </button>
+            ))}
+            <span className="mx-1 h-5 w-px bg-white/[0.14]" />
+          </>
+        ) : null}
+
         {tabs.map((mode) => (
           <button
             key={mode}
