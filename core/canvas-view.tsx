@@ -882,6 +882,19 @@ export function CanvasView({
   const queueLength = newScreens.length + toReview.length;
   /** Which kind the reviewer is standing on, which decides the bar's colour and its verb. */
   const onNew = (at ?? 0) < newScreens.length;
+  /**
+   * THE COUNT BELONGS TO THE KIND THE WORD NAMES, and reading it any other way was a lie.
+   *
+   * One queue, one stepper, the verb changes — that part is the owner's own instruction and it stands. What was
+   * wrong is that the NUMBER kept spanning both kinds while the word after it described only the kind under the
+   * cursor: one new frame followed by fourteen worked comments rendered as "1 of 15 New", and he read it exactly as
+   * it is written: *"I don't understand, did you create 15 new screens or what?"*
+   *
+   * So the position and the total are both taken inside the current kind. The stepper still walks one queue across
+   * the boundary; the label just stops claiming the other side of it.
+   */
+  const kindTotal = onNew ? newScreens.length : toReview.length;
+  const kindIndex = onNew ? (at ?? 0) : (at ?? 0) - newScreens.length;
 
   /**
    * THE THREE PIECES OF CHROME THAT COME AND GO, each kept mounted through its own exit transition.
@@ -1919,8 +1932,7 @@ export function CanvasView({
             className={cn(BAR_ITEM, "px-2.5", REVIEW_QUIET, "tabular-nums")}
             onClick={() => step(at ?? 0)}
           >
-            {(at ?? 0) + 1} of {queueLength}{" "}
-            {onNew ? "New" : "to Review"}
+            {kindIndex + 1} of {kindTotal} {onNew ? "New" : "to Review"}
           </button>
           <button
             type="button"
