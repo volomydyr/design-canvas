@@ -433,7 +433,22 @@ export async function GET(request: Request) {
   if (isProduction()) return new NextResponse("Not found", { status: 404 });
   const slug = slugOf(request);
   if (!slug) return badSlug();
-  return NextResponse.json(await readFile(await pathsFor(slug)));
+  /**
+   * THE RESPONSE SAYS WHICH FILE IT READ, and that is not cosmetic.
+   *
+   * Two layouts are live at once by design (see `pathsFor`): a namespaced `comments/<slug>.json` for a fresh
+   * install, and a flat `comments.json` for one that was reviewed before namespacing existed. The hand-off
+   * prompt named the namespaced one unconditionally, so on every upgraded install the agent was told to open a
+   * path that does not exist — which is exactly what happened the first time an agent was handed a round on
+   * this project. It cost two tool calls and a guess.
+   *
+   * `file` is response-only and never written to disk: the file cannot sensibly record its own name.
+   */
+  const paths = await pathsFor(slug);
+  return NextResponse.json({
+    ...(await readFile(paths)),
+    file: path.relative(process.cwd(), paths.json),
+  });
 }
 
 export async function POST(request: Request) {

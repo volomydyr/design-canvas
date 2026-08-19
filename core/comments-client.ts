@@ -28,13 +28,22 @@ function at(endpoint: string, canvas: string, extra?: string): string {
   return `${endpoint}?${query}`;
 }
 
-export async function loadComments(canvas: string): Promise<CanvasComment[]> {
+/**
+ * The comments, and the path they were read from.
+ *
+ * The path travels because the hand-off prompt has to name the file an agent should open, and which file that is
+ * depends on the install: see `CanvasCommentFile.file`.
+ */
+export async function loadComments(
+  canvas: string,
+): Promise<{ comments: CanvasComment[]; file: string }> {
+  const fallback = `design-canvas/comments/${canvas}.json`;
   const response = await fetch(at(CANVAS_COMMENTS_ENDPOINT, canvas), {
     cache: "no-store",
   });
-  if (!response.ok) return [];
-  const file = (await response.json()) as CanvasCommentFile;
-  return file.comments ?? [];
+  if (!response.ok) return { comments: [], file: fallback };
+  const body = (await response.json()) as CanvasCommentFile;
+  return { comments: body.comments ?? [], file: body.file ?? fallback };
 }
 
 /** Read the verdicts back out of the comments. Derived, never a second list — see `CanvasCommentKind`. */
@@ -193,7 +202,7 @@ export async function deleteComments(
   canvas: string,
   ids: string[],
 ): Promise<CanvasComment[]> {
-  if (ids.length === 0) return loadComments(canvas);
+  if (ids.length === 0) return (await loadComments(canvas)).comments;
   const response = await fetch(
     at(CANVAS_COMMENTS_ENDPOINT, canvas, `ids=${ids.map(encodeURIComponent).join(",")}`),
     { method: "DELETE" },

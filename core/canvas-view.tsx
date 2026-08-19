@@ -162,8 +162,8 @@ const SECTION_PAD = 90;
  * itself carries its own contract — every comment in it has the screen, the real route, the pinned state, the
  * region, and a picture of that region with the outline drawn on.
  */
-const handoffLine = (canvas: string) =>
-  `Act on the design comments in design-canvas/comments/${canvas}.json. Each one has an \`image\`: open it and look inside the red outline. When a comment is done, PATCH /api/design-canvas/comments?canvas=${canvas} with { id, consumed: true }.`;
+const handoffLine = (canvas: string, file: string) =>
+  `Act on the design comments in ${file}. Each one has an \`image\`: open it and look inside the red outline. When a comment is done, PATCH /api/design-canvas/comments?canvas=${canvas} with { id, consumed: true }.`;
 
 /**
  * WHAT A JUDGED EXPLORATION HANDS OVER, which is a round of work rather than a list of notes.
@@ -195,7 +195,7 @@ const handoffLine = (canvas: string) =>
  */
 type HandoffPanel = { title: string; kept: string[]; dropped: string[] };
 
-const explorationHandoff = (canvas: string, panels: HandoffPanel[]) => {
+const explorationHandoff = (canvas: string, file: string, panels: HandoffPanel[]) => {
   const dropped = panels.flatMap((one) => one.dropped);
   const judged = panels.filter((one) => one.kept.length > 0);
   return [
@@ -210,7 +210,7 @@ const explorationHandoff = (canvas: string, panels: HandoffPanel[]) => {
     ),
     judged.length === 0 ? "Nothing was liked yet, so do not build variations." : "",
     "Never build a variation of an option that was not liked, and delete the round you are refining: only the current round stays on the canvas.",
-    `Work the comments in design-canvas/comments/${canvas}.json first — they apply to the options they sit on, and a variation that ignores them is a wasted round.`,
+    `Work the comments in ${file} first — they apply to the options they sit on, and a variation that ignores them is a wasted round.`,
     "Then recapture with --changed and hand it back.",
   ]
     .filter(Boolean)
@@ -302,6 +302,10 @@ export function CanvasView({
     (declaration.explorations ?? []).length > 0 ? "explore" : "kinds",
   );
   const [comments, setComments] = useState<CanvasComment[]>([]);
+  /** Which file the comments were read from, for the hand-off to name. See `CanvasCommentFile.file`. */
+  const [commentsFile, setCommentsFile] = useState(
+    `design-canvas/comments/${canvas}.json`,
+  );
   /**
    * THE MANIFEST, AND `null` MEANS IT HAS NOT ARRIVED — which is a different thing from arriving empty.
    *
@@ -350,7 +354,10 @@ export function CanvasView({
   const surface = useRef<CanvasSurfaceHandle | null>(null);
 
   useEffect(() => {
-    void loadComments(canvas).then(setComments);
+    void loadComments(canvas).then(({ comments: loaded, file }) => {
+      setComments(loaded);
+      setCommentsFile(file);
+    });
     void loadShots(canvas).then((manifest) => {
       setShots(
         Object.fromEntries(manifest.map((shot) => [shot.screenId, shot])),
@@ -694,8 +701,8 @@ export function CanvasView({
    */
   const handoffText =
     (view === "explore" && handoffPanels.length > 0
-      ? explorationHandoff(canvas, handoffPanels)
-      : handoffLine(canvas)) + homelessClause;
+      ? explorationHandoff(canvas, commentsFile, handoffPanels)
+      : handoffLine(canvas, commentsFile)) + homelessClause;
 
   /**
    * MEASURED BY OBSERVER, NOT ONCE ON OPEN — because the panel opens with a transform.

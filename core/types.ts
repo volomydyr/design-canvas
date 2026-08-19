@@ -519,4 +519,12 @@ export type CanvasCommentFile = {
   contract: string;
   updatedAt: string;
   comments: CanvasComment[];
+  /**
+   * WHICH FILE THIS CAME OUT OF, repo-relative. Served by the route, never written into the file.
+   *
+   * Two layouts are live at once (see `pathsFor` in `comments-route.ts`), so the hand-off prompt cannot assume
+   * one: it named the namespaced path unconditionally and sent an agent to a file that did not exist on every
+   * install that predates namespacing.
+   */
+  file?: string;
 };
