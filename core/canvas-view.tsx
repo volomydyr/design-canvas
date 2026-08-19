@@ -42,6 +42,7 @@ import { CanvasFrame, type NewRegionComment } from "./canvas-frame";
 import {
   CanvasSurface,
   type CanvasSurfaceHandle,
+  shownZoom,
   ZOOM_STEP,
 } from "./canvas-surface";
 import { cn } from "./cn";
@@ -1174,6 +1175,15 @@ export function CanvasView({
       fit: () => surface.current?.frame(layout.box),
       zoomBy: (factor: number) => surface.current?.zoomBy(factor),
       setView: (next: ViewMode) => setView(next),
+      /**
+       * DRIVEN BY THE ORACLE so it can assert every device rather than the one the canvas opens on.
+       *
+       * The alternative was for the check script to click the toolbar button, which couples it to the chrome's
+       * markup; `setView` was exposed for the same reason and this is its sibling. It also reports which devices
+       * exist, so the script does not have to infer them from the declaration a second time.
+       */
+      setDevice: (next: CanvasDevice) => setDevice(next),
+      devices: () => devices,
       setCommenting,
       read: () => surface.current?.read(),
       /* What is grouped with what, so the oracle can assert it rather than measure pixels for it. */
@@ -1490,34 +1500,6 @@ export function CanvasView({
           </button>
         ))}
 
-        <span className="mx-1 h-5 w-px bg-white/[0.14]" />
-
-        <button
-          type="button"
-          aria-label="Zoom out"
-          className={cn(BAR_ITEM, BAR_QUIET, BAR_SQUARE)}
-          onClick={() => surface.current?.zoomBy(1 / ZOOM_STEP)}
-        >
-          <IconMinus />
-        </button>
-        <button
-          type="button"
-          title="Fit Everything"
-          /* 10px rather than 14: the minus, the percentage and the plus read as one control, and 4px of the
-             gap between them was doing nothing. */
-          className={cn(BAR_ITEM, "px-2.5", BAR_QUIET, "tabular-nums")}
-          onClick={() => surface.current?.frame(layout.box)}
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom in"
-          className={cn(BAR_ITEM, BAR_QUIET, BAR_SQUARE)}
-          onClick={() => surface.current?.zoomBy(ZOOM_STEP)}
-        >
-          <IconPlus />
-        </button>
 
         {/**
          * EVERYTHING FROM HERE IS THE COMMENT LAYER, and a published canvas has none of it.
@@ -1709,6 +1691,48 @@ export function CanvasView({
             ) : null}
           </div>
         ) : null}
+      </div>
+
+      {/**
+       * THE ZOOM, IN ITS OWN BAR AT THE BOTTOM RIGHT.
+       *
+       * It sat in the top toolbar between the tabs and the comment control, which put a continuous adjustment in
+       * the middle of a row of one-off choices. The owner moved it: *"move this outside the top toolbar to become
+       * a separate toolbar at the bottom right corner of the canvas. also decrease the horizontal space between
+       * minus, percentage and plus to 0px."*
+       *
+       * Flush, so the three read as one control rather than three: no gap on this row, and the padding is on the
+       * items. Same surface, same height, same radius as the top bar, so it is the same instrument in two places.
+       */}
+      <div
+        className="absolute bottom-6 right-6 z-[60] flex items-center rounded-full bg-[hsl(180_15%_5.5%)] px-2 py-2 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.04),0px_10px_32px_0px_rgba(0,0,0,0.04)]"
+        data-canvas-chrome=""
+        data-canvas-zoombar=""
+      >
+        <button
+          type="button"
+          aria-label="Zoom out"
+          className={cn(BAR_ITEM, BAR_QUIET, BAR_SQUARE)}
+          onClick={() => surface.current?.zoomBy(1 / ZOOM_STEP)}
+        >
+          <IconMinus />
+        </button>
+        <button
+          type="button"
+          title="Fit Everything"
+          className={cn(BAR_ITEM, "px-2", BAR_QUIET, "tabular-nums")}
+          onClick={() => surface.current?.frame(layout.box)}
+        >
+          {shownZoom(zoom)}%
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          className={cn(BAR_ITEM, BAR_QUIET, BAR_SQUARE)}
+          onClick={() => surface.current?.zoomBy(ZOOM_STEP)}
+        >
+          <IconPlus />
+        </button>
       </div>
 
       {/**

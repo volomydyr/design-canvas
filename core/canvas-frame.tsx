@@ -823,9 +823,11 @@ export function CanvasFrame({
               </button>
             }
           >
+            {/* One word briefer, on the owner's note about this exact panel: "photographed" was doing the work
+                "at a phone's size" already does. */}
             {onTwin.device === "phone"
-              ? "The same screen photographed at a phone's size. The canvas switches device and lands on it."
-              : "The same screen photographed at a desktop's size. The canvas switches device and lands on it."}
+              ? "The same screen at a phone's size. The canvas switches device and lands on it."
+              : "The same screen at a desktop's size. The canvas switches device and lands on it."}
           </CanvasTooltip>
         ) : null}
 

@@ -185,7 +185,7 @@ checkLabels(edges);
  * view is how a canvas passes its checks while a whole section is missing from a view that should hold it.
  */
 /**
- * AND EVERY POPULATION IS ONE DEVICE'S, because the canvas draws one device at a time.
+ * THE COUNT ASSERTIONS ARE ONE DEVICE'S, because the canvas draws one device at a time.
  *
  * The device switch is a level above the three views (see `CanvasDevice`), so "every declared screen" stopped
  * being "every drawn frame" the moment a phone was declared: the first one made four count assertions fail at
@@ -193,12 +193,14 @@ checkLabels(edges);
  * device the canvas is actually showing, which is the one the switch opens on — the first device the declaration
  * has. A canvas with one device is unaffected, which is every canvas built before this.
  *
- * WHAT THIS DOES NOT DO, said out loud rather than left as a silent gap: it does not walk the other devices. The
- * frames, pictures and groups of a second device are captured and oracled by the capture run's own claims, and
- * asserting the canvas draws them too would mean driving the switch and re-running the whole DOM pass per
- * device. That is worth doing and it is not done here.
+ * The per-screen picture pass further down DOES walk every device, by driving the switch through the canvas's own
+ * test hook. What stays scoped to the opening device is the group-count arithmetic below, which is about how a
+ * declaration is grouped rather than about whether a picture arrived.
  */
-const CANVAS_DEVICE = screens.length > 0 ? (screens[0].device ?? "desktop") : "desktop";
+const devicesDeclared = [
+  ...new Set(screens.map((one) => one.device ?? "desktop")),
+];
+const CANVAS_DEVICE = devicesDeclared[0] ?? "desktop";
 const onDevice = screens.filter(
   (screen) => (screen.device ?? "desktop") === CANVAS_DEVICE,
 );
@@ -437,8 +439,32 @@ await page
 /* Each frame checked while the view that draws it is the one on screen: an exploration direction has no frame in
    the grouped view, so a single pass over every declared screen would report half of them missing. */
 let inView = null;
-/* One device's frames, for the reason on `CANVAS_DEVICE`: the others are not drawn while this one is. */
-for (const screen of onDevice) {
+/**
+ * EVERY DEVICE, NOT JUST THE ONE THE CANVAS OPENS ON.
+ *
+ * This pass used to run over one device's screens and say so, which left a whole device unasserted: its frames
+ * could be missing from the canvas, or drawing a picture of the wrong size, and nothing here would know. The
+ * owner: *"definitely fix 'The oracle still doesn't walk the second device'."*
+ *
+ * So the loop is device-major: switch the canvas to a device through its own test hook, then check that device's
+ * screens in whichever view draws them. The switch is the same mechanism the view switch below uses, and it needs
+ * the same settling pause for the same reason — the layout is rebuilt from scratch and a frame checked in the same
+ * tick is checked against the previous device's positions.
+ */
+let onCanvasDevice = null;
+for (const screen of screens) {
+  const wantsDevice = screen.device ?? "desktop";
+  if (wantsDevice !== onCanvasDevice) {
+    await page.evaluate(
+      (next) => window.__devCanvas.setDevice?.(next),
+      wantsDevice,
+    );
+    await page.waitForTimeout(500);
+    onCanvasDevice = wantsDevice;
+    /* A device switch re-fits the canvas, so whatever view was showing is showing a new world: force the next
+       comparison to re-assert it rather than trusting the last one. */
+    inView = null;
+  }
   const wants = screen.view === "exploration" ? "explore" : "kinds";
   /**
    * SWITCHING THE VIEW IS NOT INSTANT, and jumping in the same tick lands on the OLD layout.
@@ -532,7 +558,7 @@ for (const screen of onDevice) {
     );
 }
 console.log(
-  `${onDevice.length} pictures load on the canvas at their captured size`,
+  `${screens.length} pictures load on the canvas at their captured size, across ${devicesDeclared.length} device(s)`,
 );
 
 /* ----------------------------------------------------------------- the edges */

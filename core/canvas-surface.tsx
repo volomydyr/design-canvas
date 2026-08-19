@@ -118,6 +118,8 @@ export const CanvasSurface = forwardRef<
   const raf = useRef(0);
   const reported = useRef(0.5);
   const [grabbing, setGrabbing] = useState(false);
+  /** False until the opening framing has been applied. Nothing in the world may be seen before that. */
+  const [placed, setPlaced] = useState(false);
 
   const clampZoom = (zoom: number) =>
     Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
@@ -313,6 +315,7 @@ export const CanvasSurface = forwardRef<
     current.current = { ...target.current };
     paint();
     /* Only now is the world pointing anywhere worth looking at, so only now may anything be seen. */
+    setPlaced(true);
     onPlaced?.();
   }, [opening, frame, paint, onPlaced]);
 
@@ -472,15 +475,80 @@ export const CanvasSurface = forwardRef<
           tens of thousands of pixels each way — and promoting it asks the browser for one composited layer
           far past the maximum texture size, which drops the whole surface onto a slow path. That was the
           single biggest cause of the first build's stutter. */}
+      {/**
+       * THE WHOLE WORLD WAITS, not just the frames in it.
+       *
+       * Hiding the frames alone left the group headings and their panels drawn at the unplaced transform, which is
+       * the world's top-left corner at half scale: a section title rendered at 132 world pixels filled the screen
+       * for the second it took the manifest to arrive. The owner photographed it — a giant "Teaching slides" over
+       * an empty stage — *"that's how the canvas looks like now for about a second… and only after that it shows
+       * the intended animation you built."*
+       *
+       * `visibility` rather than `opacity`, so the frames' own staggered entrance is the only opacity animation in
+       * play and the two cannot fight over the same property.
+       */}
       <div
         ref={worldRef}
         className="absolute left-0 top-0 origin-top-left"
+        style={{ visibility: placed ? "visible" : "hidden" }}
         data-canvas-world=""
       >
         {children}
       </div>
+      {/**
+       * THE LOADER, for the second before the world can be shown.
+       *
+       * The manifest has to arrive before anything can be laid out, and until then there is genuinely nothing to
+       * draw. Two graphics were rejected here — a bar over the canvas's name, then three rectangles of different
+       * heights, which read as a chart — so this one is built from the thing the owner did choose: the arrival.
+       * Three EQUAL frame outlines fading in sequence, on the same 60ms rhythm and the same curve the frames
+       * themselves use a moment later, so the wait and the arrival are one gesture rather than two ideas.
+       *
+       * Outlines rather than fills, in the frames' own edge colour: what is coming is frames, and a filled block
+       * is what made the last attempt read as a chart. No text, on his instruction.
+       */}
+      {placed ? null : (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 grid place-items-center"
+          data-canvas-loading=""
+        >
+          <div className="flex items-center gap-3">
+            {[0, 1, 2].map((at) => (
+              <span
+                key={at}
+                className="h-11 w-16 rounded-[4px] ring-1 ring-white/[0.14] motion-reduce:animate-none"
+                style={{
+                  animation: `canvas-arrive 1200ms cubic-bezier(0.16, 1, 0.3, 1) ${at * 60}ms infinite`,
+                }}
+              />
+            ))}
+          </div>
+          <style>{`@keyframes canvas-arrive{0%,100%{opacity:.25}45%{opacity:1}}`}</style>
+        </div>
+      )}
     </div>
   );
 });
+
+/**
+ * WHAT THE ZOOM READS AS, which is not the same as what it is.
+ *
+ * The real range is 0.06 to 1.25 — a fit of a wide canvas is 6%, and the surface allows a little past 1:1 so a
+ * frame can be inspected — and printing that raw gave a readout that ran from 6% to 125%. Neither end means
+ * anything to a reader: 6% is not "six percent of" something they chose, and 125% invites the question of what
+ * the other 25% is. The owner asked for the representation to be fixed rather than the behaviour: *"ensure that
+ * the minimal percentage is always 10% and the biggest is always 100% (i.e., I'm not saying to change the
+ * functionality of zooming, but rather change the way it represents in the UI, so these numbers feel a bit
+ * nicer)."*
+ *
+ * So the scale is mapped, not clamped: the whole real range spans 10 to 100, every step still moves the number,
+ * and the ends are exact.
+ */
+export function shownZoom(zoom: number): number {
+  const at = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+  const through = (at - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM);
+  return Math.round(10 + through * 90);
+}
 
 export { ZOOM_STEP };
