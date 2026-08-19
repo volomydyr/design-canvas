@@ -77,6 +77,22 @@ const KIND_GAP = 150;
  */
 const TITLE_CHAR_W = 62;
 
+/**
+ * A PANEL IS NEVER NARROWER THAN ITS OWN NAME, in any of the three views.
+ *
+ * This guard existed and was applied in exactly one place, the exploration layout, so the same bug came straight
+ * back the first time a flow held one narrow frame: a phone group titled "Share menu and Customize Page" with a
+ * single 312px frame in it, and the heading running clean off the panel and across the stage. The owner, twice
+ * now: *"The section can never be smaller than the name. And I think we already handled it in the skill but I'm
+ * not sure how it happened here."*
+ *
+ * So it is a function, and every layout that builds a group box calls it. A panel slightly wider than its heading
+ * is invisible; a panel narrower than its heading is the bug.
+ */
+function atLeastTitleWide(width: number, title: string): number {
+  return Math.max(width, title.length * TITLE_CHAR_W);
+}
+
 export type LaidOutNode = {
   screen: CanvasScreen;
   /**
@@ -516,7 +532,12 @@ function midpoint(
 
 /* --------------------------------------------------------------------- views */
 
-function boxOf(nodes: LaidOutNode[], originY: number, deepestLane = 0): Box {
+function boxOf(
+  nodes: LaidOutNode[],
+  originY: number,
+  deepestLane = 0,
+  title = "",
+): Box {
   if (nodes.length === 0) return { x: 0, y: originY, w: 0, h: TITLE_SPACE };
   const left = Math.min(...nodes.map((node) => node.x));
   const right = Math.max(...nodes.map((node) => node.x + node.w));
@@ -528,7 +549,7 @@ function boxOf(nodes: LaidOutNode[], originY: number, deepestLane = 0): Box {
   return {
     x: left,
     y: originY,
-    w: right - left,
+    w: atLeastTitleWide(right - left, title),
     h: foot - originY,
   };
 }
@@ -570,7 +591,7 @@ export function layoutFlows(
     );
     const routed = routeEdges(flow, nodes, problems);
     const edges = routed.edges;
-    const box = boxOf(nodes, originY, routed.deepest);
+    const box = boxOf(nodes, originY, routed.deepest, flow.title);
     groups.push({
       id: flow.id,
       title: flow.title,
@@ -651,7 +672,7 @@ export function layoutKinds(
       box: {
         x: 0,
         y: originY,
-        w: Math.max(0, x - KIND_GAP),
+        w: atLeastTitleWide(Math.max(0, x - KIND_GAP), kind),
         h: top + tallest + FOOT_SPACE - originY,
       },
     });
@@ -770,7 +791,7 @@ export function layoutExplorations(
         x: 0,
         y: originY,
         /* The wider of the two: the frames inside, or the heading over them. */
-        w: Math.max(0, x - KIND_GAP, exploration.surface.length * TITLE_CHAR_W),
+        w: atLeastTitleWide(Math.max(0, x - KIND_GAP), exploration.surface),
         h: top + tallest + FOOT_SPACE - originY,
       },
     });

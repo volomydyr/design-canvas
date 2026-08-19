@@ -602,6 +602,20 @@ export type CanvasCommentFile = {
   updatedAt: string;
   comments: CanvasComment[];
   /**
+   * SCREEN IDS THE REVIEWER HAS SEEN, which is the whole of the new-screen mechanism's memory.
+   *
+   * A screen is NEW when it is not in here. The definition is the owner's and it is deliberately narrow: *"new
+   * screens are gonna be only the ones that are literally new. Like you just added it as a new screen. If you
+   * updated the existing screen, it doesn't count as a new screen... the comment counts as a comment for you to
+   * review, but it doesn't count as a new screen."* So the two queues are disjoint by construction, which is what
+   * lets one stepper walk both without ambiguity.
+   *
+   * IT IS SEEDED ON FIRST SIGHT, not left empty. An empty list on an existing canvas would mean all seventy-odd
+   * frames are new, which is the opposite of useful — so the canvas writes every currently declared screen into it
+   * the first time it finds the key missing, and counting starts from there.
+   */
+  seen?: string[];
+  /**
    * WHICH FILE THIS CAME OUT OF, repo-relative. Served by the route, never written into the file.
    *
    * Two layouts are live at once (see `pathsFor` in `comments-route.ts`), so the hand-off prompt cannot assume

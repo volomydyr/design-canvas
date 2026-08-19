@@ -132,6 +132,16 @@ const NOTE_BOX_W = 468;
 const NOTE_BOX_RADIUS = 18;
 const NOTE_BOX_SHADOW = `0 18px 44px hsl(0 0% 0% / 0.55)`;
 const FRAME_EDGE = `0 0 0 ${RING}px hsl(0 0% 100% / 0.14), 0 ${RING * 8}px ${RING * 22}px hsl(0 0% 0% / 0.55)`;
+/**
+ * THE SAME EDGE, IN THE NEW-SCREEN BLUE. Not a badge and not a second object: the hairline every frame already
+ * draws, in the one colour that means "you have not seen this yet".
+ *
+ * Light blue rather than the review green, so the two states cannot be confused — the owner, once both existed:
+ * *"the outline I think that it actually has to be blue, like light blue. and the toolbar has to be blue as
+ * well."* Brighter and thicker than the ordinary edge, because it has to be findable at 10% zoom across a canvas
+ * of seventy frames, which is the whole reason it exists.
+ */
+const NEW_EDGE = `0 0 0 ${RING * 1.5}px hsl(206 92% 66% / 0.95), 0 ${RING * 8}px ${RING * 22}px hsl(0 0% 0% / 0.55)`;
 
 /**
  * What a source path says on a badge. The file name, except when the file name is `page.tsx` or `route.ts` —
@@ -233,6 +243,7 @@ export function CanvasFrame({
   chromeW,
   revealed = true,
   entranceDelay = 0,
+  isNew = false,
 }: {
   /** Which canvas this frame belongs to. Namespaces the picture it asks for — see `src`. */
   canvas: string;
@@ -263,6 +274,16 @@ export function CanvasFrame({
   revealed?: boolean;
   /** Milliseconds this frame waits before arriving, so a flow composes itself in its own order. */
   entranceDelay?: number;
+  /**
+   * A SCREEN THE REVIEWER HAS NOT SEEN BEFORE, which takes the frame's own edge in blue.
+   *
+   * The mark is the edge rather than a badge because the edge is already there: every frame draws a hairline, so
+   * this is the same object in a different colour rather than one more thing on the canvas. The owner: *"it would
+   * be nice to mark it, mark each screen somehow… maybe like with a green color border or something like that,
+   * because we already show a border"*, and then, once the two states existed side by side, *"the outline I think
+   * that it actually has to be blue, like light blue"* — green stays the colour of a comment awaiting approval.
+   */
+  isNew?: boolean;
   screen: CanvasScreen;
   /** What was captured for this screen, or null when it has never been captured. */
   shot: CanvasShot | null;
@@ -898,9 +919,13 @@ export function CanvasFrame({
       <div
         className="relative h-full w-full bg-white/[0.04]"
         style={{
+          /* A failed claim outranks everything: a frame that does not prove what it says is a bug, and a new
+             frame is only news. */
           boxShadow: failed
             ? `0 0 0 ${RING}px ${RED}, 0 ${RING * 8}px ${RING * 22}px hsl(0 0% 0% / 0.55)`
-            : FRAME_EDGE,
+            : isNew
+              ? NEW_EDGE
+              : FRAME_EDGE,
           contentVisibility: "auto",
           containIntrinsicSize: `${w}px ${h}px`,
         }}

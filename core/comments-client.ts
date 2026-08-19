@@ -34,16 +34,39 @@ function at(endpoint: string, canvas: string, extra?: string): string {
  * The path travels because the hand-off prompt has to name the file an agent should open, and which file that is
  * depends on the install: see `CanvasCommentFile.file`.
  */
-export async function loadComments(
-  canvas: string,
-): Promise<{ comments: CanvasComment[]; file: string }> {
+export async function loadComments(canvas: string): Promise<{
+  comments: CanvasComment[];
+  file: string;
+  /** Undefined means the key has never been written — see `CanvasCommentFile.seen` on why that is seeded. */
+  seen: string[] | undefined;
+}> {
   const fallback = `design-canvas/comments/${canvas}.json`;
   const response = await fetch(at(CANVAS_COMMENTS_ENDPOINT, canvas), {
     cache: "no-store",
   });
-  if (!response.ok) return { comments: [], file: fallback };
+  if (!response.ok) return { comments: [], file: fallback, seen: [] };
   const body = (await response.json()) as CanvasCommentFile;
-  return { comments: body.comments ?? [], file: body.file ?? fallback };
+  return {
+    comments: body.comments ?? [],
+    file: body.file ?? fallback,
+    seen: body.seen,
+  };
+}
+
+/** Record screens as seen, which is what stops them being new. Returns the file's new `seen` list. */
+export async function markSeen(
+  canvas: string,
+  ids: string[],
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const response = await fetch(at(CANVAS_COMMENTS_ENDPOINT, canvas), {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ seen: ids }),
+  });
+  if (!response.ok) throw new Error(`Could not save (${response.status})`);
+  const body = (await response.json()) as CanvasCommentFile;
+  return body.seen ?? [];
 }
 
 /** Read the verdicts back out of the comments. Derived, never a second list — see `CanvasCommentKind`. */

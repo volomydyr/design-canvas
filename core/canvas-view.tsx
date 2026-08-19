@@ -73,6 +73,7 @@ import {
   deleteComments,
   editComment,
   loadComments,
+  markSeen,
   loadShots,
   saveComment,
   setVerdict,
@@ -333,6 +334,19 @@ export function CanvasView({
    */
   const [revealed, setRevealed] = useState(false);
   const [comments, setComments] = useState<CanvasComment[]>([]);
+  /**
+   * WHICH SCREENS THE REVIEWER HAS ALREADY SEEN.
+   *
+   * `null` means the file has not answered yet, and NOTHING is new while that is true — a canvas that flashed
+   * seventy blue frames for a tick before the answer arrived would be worse than no mark at all.
+   *
+   * `missing` is the other question, and conflating the two cost a round: the seeding effect keyed on `seen ===
+   * null`, which is also the state on first mount, so it fired before the fetch and wrote every screen into the
+   * file as seen — permanently defeating the mechanism it was supposed to bootstrap. Two names now, because they
+   * are two facts.
+   */
+  const [seen, setSeen] = useState<string[] | null>(null);
+  const [seenMissing, setSeenMissing] = useState(false);
   /** Which file the comments were read from, for the hand-off to name. See `CanvasCommentFile.file`. */
   const [commentsFile, setCommentsFile] = useState(
     `design-canvas/comments/${canvas}.json`,
@@ -385,9 +399,11 @@ export function CanvasView({
   const surface = useRef<CanvasSurfaceHandle | null>(null);
 
   useEffect(() => {
-    void loadComments(canvas).then(({ comments: loaded, file }) => {
+    void loadComments(canvas).then(({ comments: loaded, file, seen: known }) => {
       setComments(loaded);
       setCommentsFile(file);
+      setSeen(known ?? null);
+      setSeenMissing(known === undefined);
     });
     void loadShots(canvas).then((manifest) => {
       setShots(
@@ -700,6 +716,47 @@ export function CanvasView({
     [waiting],
   );
   /**
+   * THE SCREENS THIS REVIEWER HAS NOT SEEN, which is the second thing that can be waiting for them.
+   *
+   * Every screen the declaration holds, on any device and in any view: a new frame is worth finding wherever it
+   * lives, and the stepper switches device and view to reach it. Only ids the file has recorded as seen are
+   * excluded, so this is exactly "screens that never existed here before" and never "screens that changed" — that
+   * second thing is the comment queue, which has its own bar and its own one-by-one approval.
+   */
+  const declaredIds = useMemo(
+    () => allScreens(declaration).map(({ screen }) => screen.id),
+    [declaration],
+  );
+  const isNew = useCallback(
+    (id: string) => seen !== null && !seen.includes(id),
+    [seen],
+  );
+  const newScreens = useMemo(
+    () => (seen === null ? [] : declaredIds.filter((id) => !seen.includes(id))),
+    [declaredIds, seen],
+  );
+
+  /**
+   * SEEDED ON FIRST SIGHT, or every frame on an existing canvas would be new at once.
+   *
+   * A canvas installed before this mechanism existed has no `seen` key, and an empty list would mean all
+   * seventy-odd of its frames are unseen — which is noise, not a signal. So the first time the key is missing the
+   * whole current declaration is written into it and counting starts from there. It runs once: after the write the
+   * key exists, so nothing on any later load matches this condition.
+   */
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (!seenMissing || seeded.current || declaredIds.length === 0) return;
+    seeded.current = true;
+    void markSeen(canvas, declaredIds)
+      .then((list) => {
+        setSeen(list);
+        setSeenMissing(false);
+      })
+      .catch(() => setSeen([]));
+  }, [seenMissing, declaredIds, canvas]);
+
+  /**
    * WHEN THE PILE INCLUDES A SECOND ROUND, THE PROMPT SAYS WHICH ONES AND WHY IT MATTERS.
    *
    * A dismissal is the next message in a thread: the reviewer's new words replace the note and the answered ones
@@ -804,6 +861,10 @@ export function CanvasView({
     () => visible.filter((comment) => comment.consumedAt && comment.stale),
     [visible],
   );
+  /* The bar is present when ANYTHING waits, and `queue` itself is built further down where both sets exist. */
+  const queueLength = newScreens.length + toReview.length;
+  /** Which kind the reviewer is standing on, which decides the bar's colour and its verb. */
+  const onNew = (at ?? 0) < newScreens.length;
 
   /**
    * THE THREE PIECES OF CHROME THAT COME AND GO, each kept mounted through its own exit transition.
@@ -812,7 +873,7 @@ export function CanvasView({
    * unmounts these the instant their condition flips and there is nothing left on screen to fade.
    */
   const [handoffPresent, handoffOpen] = useOpenState(handoff);
-  const [reviewPresent, reviewOpen] = useOpenState(toReview.length > 0);
+  const [reviewPresent, reviewOpen] = useOpenState(queueLength > 0);
   const [undoPresent, undoOpen] = useOpenState(removing !== null);
   /* Held separately because the bar outlives `removing`: it is still fading when the list is already null. */
   const [undoCount, setUndoCount] = useState(0);
@@ -1152,14 +1213,60 @@ export function CanvasView({
 
   /** Step to the nth comment awaiting review. Wraps at both ends: a dead end needs a disabled state, which
    *  is one more thing on screen. */
+  /**
+   * ONE QUEUE OF THINGS WAITING, and the two kinds in it can never be the same frame.
+   *
+   * The owner chose this over two bars: *"One queue, one stepper, the verb changes."* New frames come first,
+   * because a design nobody has seen outranks a fix they have already read, and the bar tells you which kind you
+   * are on by its colour and its action. The two sets are disjoint because "new" means a screen that never existed
+   * here before, so no comment from a previous round can be sitting on one.
+   */
+  const queue = useMemo<
+    Array<
+      | { kind: "new"; screenId: string }
+      | { kind: "comment"; comment: CanvasComment }
+    >
+  >(
+    () => [
+      ...newScreens.map((screenId) => ({ kind: "new" as const, screenId })),
+      ...toReview.map((comment) => ({ kind: "comment" as const, comment })),
+    ],
+    [newScreens, toReview],
+  );
+
+  /**
+   * STEPPING TO A NEW FRAME CROSSES DEVICE AND VIEW, because a frame is worth finding wherever it lives.
+   *
+   * A comment is stepped to inside whatever is on screen, which is how it has always worked. A new frame may be a
+   * phone screen while the canvas shows desktop, or an exploration direction while it shows a flow, so the stepper
+   * moves those two first and lands with `pendingFocus`, the same mechanism the device jump under a frame uses.
+   */
+  const goToNew = useCallback(
+    (screenId: string) => {
+      const found = allScreens(declaration).find(
+        ({ screen }) => screen.id === screenId,
+      );
+      if (!found) return;
+      const itsDevice = found.screen.device ?? DEFAULT_DEVICE;
+      if (itsDevice !== device) setDevice(itsDevice);
+      const itsView: ViewMode = found.view === "exploration" ? "explore" : view === "flows" && found.view === "flow" ? "flows" : "kinds";
+      if (itsView !== view) setView(itsView);
+      if (itsDevice !== device || itsView !== view) setPendingFocus(screenId);
+      else goToScreen(screenId);
+    },
+    [declaration, device, view, goToScreen],
+  );
+
   const step = useCallback(
     (to: number) => {
-      if (toReview.length === 0) return;
-      const next = (to + toReview.length) % toReview.length;
+      if (queue.length === 0) return;
+      const next = (to + queue.length) % queue.length;
       setAt(next);
-      focus(toReview[next]);
+      const item = queue[next];
+      if (item.kind === "new") goToNew(item.screenId);
+      else focus(item.comment);
     },
-    [toReview, focus],
+    [queue, focus, goToNew],
   );
 
   /**
@@ -1255,6 +1362,7 @@ export function CanvasView({
         scale={declaration.frameScale}
         pins={pinsFor(node.screen.id)}
         revealed={revealed}
+        isNew={isNew(node.screen.id)}
         /* The flow's own reading order: a column at a time, left to right, and nothing later than 240ms. */
         entranceDelay={Math.min(node.rank * 60, 240)}
         /* Wider than the picture for a phone, so nothing under the frame has to shrink — see `chromeWidth`. */
@@ -1759,12 +1867,22 @@ export function CanvasView({
              and the action that's in between those two chevrons... it should be 0 pixels there."_ A single
              `gap-1` on this row could not say that, because it spaced the arrows AND the divider AND Approve
              All with one number. Two groups, so the triplet can be flush and the rest can breathe. */
+          /**
+           * BLUE FOR NEW SCREENS, GREEN FOR COMMENTS, and the bar changes as you step.
+           *
+           * The owner: *"regarding the outline I think that it actually has to be blue, like light blue. and the
+           * toolbar has to be blue as well. Then, with this approach, it will be really clear when you're looking
+           * at new screens and making decisions based on the new screens, or you're looking at the comments that
+           * were updated and you need to approve them or not."* The frames carry the same blue on their own edge,
+           * so the bar and the thing it is pointing at are visibly one state.
+           */
           className={cn(
-            "absolute bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center rounded-full bg-[hsl(154_46%_30%)] p-1.5 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.18),0px_10px_32px_0px_rgba(0,0,0,0.22)]",
+            "absolute bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center rounded-full p-1.5 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.18),0px_10px_32px_0px_rgba(0,0,0,0.22)]",
+            onNew ? "bg-[hsl(206_58%_36%)]" : "bg-[hsl(154_46%_30%)]",
             BAR_MOTION,
           )}
           data-canvas-chrome=""
-          data-canvas-review=""
+          data-canvas-review={onNew ? "new" : "comments"}
         >
           {/* The stepper: arrow, count, arrow, flush against each other so they read as one control. */}
           <div className="flex items-center" data-canvas-stepper="">
@@ -1784,7 +1902,8 @@ export function CanvasView({
             className={cn(BAR_ITEM, "px-2.5", REVIEW_QUIET, "tabular-nums")}
             onClick={() => step(at ?? 0)}
           >
-            {(at ?? 0) + 1} of {toReview.length} to Review
+            {(at ?? 0) + 1} of {queueLength}{" "}
+            {onNew ? "New" : "to Review"}
           </button>
           <button
             type="button"
@@ -1800,6 +1919,23 @@ export function CanvasView({
             type="button"
             className={cn(BAR_ITEM, "px-2.5", REVIEW_QUIET)}
             onClick={() => {
+              /**
+               * NEW SCREENS HAVE NO PER-FRAME APPROVAL, only this.
+               *
+               * The owner talked himself out of one, and he is right: *"maybe for the new designs, it doesn't make
+               * sense to have a single Approve button near each, because like, what if you don't click it? it
+               * doesn't really make sense. And you just need the Approve all button. And you need the navigation to
+               * look at all the new designs. I think that's the only real value here… because for the comments it's
+               * really important you do it one by one."* A comment is a claim to answer; a new screen is only
+               * something to have looked at.
+               */
+              if (onNew) {
+                const ids = [...newScreens];
+                if (ids.length === 0) return;
+                setAt(null);
+                void markSeen(canvas, ids).then(setSeen);
+                return;
+              }
               const ids = toReview.map((comment) => comment.id);
               if (ids.length === 0) return;
               setOpenPin(null);
@@ -1819,6 +1955,9 @@ export function CanvasView({
               }, UNDO_MS);
             }}
           >
+            {/* THE SAME WORD FOR BOTH, on his instruction: *"you could use the same language which is
+                approve"*. What it does differs — one marks screens seen, the other deletes answered comments —
+                but from the reviewer's seat both are "I have looked at these and they are fine". */}
             Approve All
           </button>
         </div>

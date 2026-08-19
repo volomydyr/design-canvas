@@ -120,6 +120,13 @@ export const CanvasSurface = forwardRef<
   const [grabbing, setGrabbing] = useState(false);
   /** False until the opening framing has been applied. Nothing in the world may be seen before that. */
   const [placed, setPlaced] = useState(false);
+  /** And this drops the loader out of the tree once its exit has finished, so nothing is left animating. */
+  const [gone, setGone] = useState(false);
+  useEffect(() => {
+    if (!placed) return;
+    const timer = window.setTimeout(() => setGone(true), 460);
+    return () => window.clearTimeout(timer);
+  }, [placed]);
 
   const clampZoom = (zoom: number) =>
     Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
@@ -507,17 +514,38 @@ export const CanvasSurface = forwardRef<
        * Outlines rather than fills, in the frames' own edge colour: what is coming is frames, and a filled block
        * is what made the last attempt read as a chart. No text, on his instruction.
        */}
-      {placed ? null : (
+      {/**
+       * IT LEAVES BY BLURRING AND LIFTING, rather than by being removed.
+       *
+       * The owner, on the moment the loader becomes the canvas: *"maybe there could be like a nice blur out or I
+       * don't know blur out and maybe a slight scale effect… just to make it feel more premium if it doesn't of
+       * course impact the performance of the canvas too much."*
+       *
+       * IT DOES NOT COST THE CANVAS ANYTHING, and that is the reason it is allowed here of all places: this
+       * element is 1 by 1 viewport, it exists only before the world is shown, and it is gone from the tree 420ms
+       * after that. A blur on the world itself would be the opposite trade — tens of thousands of pixels each way,
+       * on a surface that is about to be panned.
+       */}
+      {gone ? null : (
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 grid place-items-center"
-          data-canvas-loading=""
+          style={{
+            opacity: placed ? 0 : 1,
+            filter: placed ? "blur(14px)" : "blur(0px)",
+            transform: placed ? "scale(1.06)" : "scale(1)",
+            transition:
+              "opacity 380ms cubic-bezier(0.16, 1, 0.3, 1), filter 380ms cubic-bezier(0.16, 1, 0.3, 1), transform 420ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+          data-canvas-loading={placed ? "leaving" : "waiting"}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             {[0, 1, 2].map((at) => (
               <span
                 key={at}
-                className="h-11 w-16 rounded-[4px] ring-1 ring-white/[0.14] motion-reduce:animate-none"
+                /* A size up, on the owner's note: at 64x44 the three of them read as a detail rather than as the
+                   thing the screen is currently about. */
+                className="h-[68px] w-[100px] rounded-[6px] ring-1 ring-white/[0.14] motion-reduce:animate-none"
                 style={{
                   animation: `canvas-arrive 1200ms cubic-bezier(0.16, 1, 0.3, 1) ${at * 60}ms infinite`,
                 }}

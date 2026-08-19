@@ -209,6 +209,7 @@ async function readFile(paths: Paths): Promise<CanvasCommentFile> {
       contract: CONTRACT,
       updatedAt: parsed.updatedAt ?? new Date().toISOString(),
       comments: Array.isArray(parsed.comments) ? parsed.comments : [],
+      ...(Array.isArray(parsed.seen) ? { seen: parsed.seen } : {}),
     };
   } catch (error) {
     /**
@@ -336,12 +337,17 @@ function mutate(
 async function writeFile(
   paths: Paths,
   comments: CanvasComment[],
+  seen?: string[],
 ): Promise<CanvasCommentFile> {
   await keepPrevious(paths);
+  /* CARRIED, NEVER DROPPED. `seen` is the reviewer's other state in this file (see `CanvasCommentFile.seen`), and
+     every comment write goes through here: forgetting it once would make every screen new again. */
+  const existing = seen ?? (await readFile(paths)).seen;
   const file: CanvasCommentFile = {
     contract: CONTRACT,
     updatedAt: new Date().toISOString(),
     comments,
+    ...(existing && existing.length > 0 ? { seen: existing } : {}),
   };
   /* The namespaced layout puts the records inside `comments/`, which may not exist on a first write. */
   await fs.mkdir(path.dirname(paths.json), { recursive: true });
@@ -526,6 +532,8 @@ export async function PATCH(request: Request) {
     id?: string;
     ids?: string[];
     consumed?: boolean;
+    /** Screen ids the reviewer has now seen. See the handler below. */
+    seen?: string[];
     note?: string;
     /** Another round on a comment already answered — see below. */
     reopen?: boolean;
@@ -576,6 +584,28 @@ export async function PATCH(request: Request) {
             at: new Date().toISOString(),
           }),
         );
+      }),
+    );
+  }
+
+  /**
+   * SCREENS THE REVIEWER HAS SEEN, which is what makes a NEW screen stop being new.
+   *
+   * A genuinely new screen is one that has never been on this canvas before — the owner drew the line himself:
+   * *"new screens are gonna be only the ones that are literally new. Like you just added it as a new screen. If
+   * you updated the existing screen, it doesn't count as a new screen."* An updated screen is the comment path,
+   * which already has its own queue, so the two sets can never hold the same frame.
+   *
+   * It lives in this file because this file is already the reviewer's own state about this canvas, and because a
+   * second store would mean a second route, a second write path and a second thing to keep in step.
+   */
+  if (Array.isArray(body.seen)) {
+    const adding = body.seen.filter((one) => typeof one === "string");
+    return NextResponse.json(
+      await serialized(async () => {
+        const file = await readFile(paths);
+        const seen = [...new Set([...(file.seen ?? []), ...adding])];
+        return writeFile(paths, file.comments, seen);
       }),
     );
   }
