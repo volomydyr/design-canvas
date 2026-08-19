@@ -507,6 +507,31 @@ new ones when needed, even if you start from a blank context but in the project 
 up."_ The same judgment applies to flows: a new state usually belongs in an existing flow, next to the states
 it can be reached from, and a new flow is for a journey none of them covers.
 
+### 3b. When a canvas has outgrown itself, split it
+
+**A canvas is this tool's top level of information architecture.** Its own frames, its own comments, its own
+review queue, its own entry on the index, and the switcher in the top-left corner crosses between them. So the
+answer to "this canvas has too many sections to navigate" is another canvas, never another level of nesting
+inside one.
+
+**Two signals, and both have to be true.** Size alone means nothing: one long feature is allowed to be long.
+What makes a canvas two canvases is size (past ~45 frames or ~8 sections) PLUS a seam — two families of route
+with no arrow crossing between them. `check-canvas.mjs` prints both, with the seam it found, as a note.
+
+**The procedure, in order.** Skipping the third step is how a review gets orphaned:
+
+1. Declare the new canvas in `project/flows.ts`: a new slug, its own `title`, `note`, `viewport`, `frameScale`
+   and `kinds`, and move the flows into it whole. Move their `kinds` entries with them.
+2. Check the seam is real: no edge should now point from one canvas into the other. If one does, the split is
+   in the wrong place — those two flows belong together.
+3. `node design-canvas/split-canvas.mjs --from <old> --to <new>` moves every comment whose screen moved, with
+   its annotated picture and its thread, renumbered inside the new review. A comment belongs to a screen, so it
+   travels with it.
+4. Capture the new canvas: `node design-canvas/capture-run.mjs --canvas <new>`.
+5. Capture the old one too, even though nothing in it changed — that run is what deletes the pictures of the
+   frames that left.
+6. Run the oracle on both, and on every other canvas in the project.
+
 ### 4. Make every declared state reachable by URL
 
 The bulk of the work, and it is app-code work rather than canvas work.

@@ -57,6 +57,7 @@ import {
 import { CanvasTooltip } from "./canvas-tooltip";
 import {
   IconCheck,
+  IconChevron,
   IconComment,
   IconCommentBubble,
   IconFrames,
@@ -95,6 +96,7 @@ import {
   CANVAS_PUBLISHED,
   type CanvasComment,
   type CanvasDeclaration,
+  type CanvasRegistry,
   type CanvasDevice,
   type CanvasScreen,
   type CanvasShot,
@@ -293,6 +295,19 @@ const DANGER =
   "text-[hsl(0_84.2%_67%)] transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-[hsl(0_84.2%_60.2%_/_0.14)] hover:text-[hsl(0_84.2%_72%)]";
 
 /**
+ * A CANVAS'S NAME, out of its title, for a control that has one line to say it in.
+ *
+ * A title is written for the index page, where there is room for a sentence: "Online Store — every surface, live".
+ * On a 320px control that is a paragraph, so the switcher shows what comes before the first dash or colon — which
+ * is the name in every title this tool has seen, and the whole title when there is no separator. Trimmed rather
+ * than declared, because a second field for the same fact is a second thing that can disagree with the first.
+ */
+function shortName(title: string): string {
+  const cut = title.split(/\s+[—–:|]\s+|\s+-\s+/)[0]?.trim();
+  return cut && cut.length > 0 ? cut : title;
+}
+
+/**
  * HOW OFTEN THE OPEN CANVAS ASKS WHETHER THE WORK CHANGED UNDER IT.
  *
  * Four seconds: a capture takes a minute or more, so this is never the thing a reviewer waits on, and it is slow
@@ -310,6 +325,7 @@ const UNDO_MS = 6000;
 export function CanvasView({
   declaration,
   canvas,
+  canvases,
 }: {
   declaration: CanvasDeclaration;
   /**
@@ -318,6 +334,18 @@ export function CanvasView({
    * pictures or mix their reviews. A project with a single canvas passes its one slug.
    */
   canvas: string;
+  /**
+   * EVERY CANVAS THIS PROJECT HAS, which is what the switcher in the top-left corner lists.
+   *
+   * A canvas is already this tool's unit of information architecture: it has its own frames, its own comments, its
+   * own review queue and its own entry on the index. What was missing was a way to cross between them without
+   * going back to that index, and the owner asked for exactly one control: *"this element that could be in the top
+   * left corner could be a switcher between different canvases."*
+   *
+   * OPTIONAL, and a project that passes nothing, or one canvas, draws no switcher at all — the same rule the
+   * device switch follows. `CanvasPage` has the registry already, so no caller has to build this.
+   */
+  canvases?: CanvasRegistry;
 }) {
   /**
    * WHICHEVER VIEW THE WORK IS IN. An open exploration wins; otherwise grouped screens.
@@ -387,6 +415,8 @@ export function CanvasView({
   const [shots, setShots] = useState<Record<string, CanvasShot> | null>(null);
   const [commenting, setCommenting] = useState(false);
   const [handoff, setHandoff] = useState(false);
+  /** Whether the canvas switcher in the top-left corner is open. */
+  const [switching, setSwitching] = useState(false);
   /* The whole button-plus-panel, so a press on the button itself is not read as a press outside. */
   const handoffRef = useRef<HTMLDivElement | null>(null);
   /** Clear All, pressed once. See the button for why it takes two. */
@@ -995,6 +1025,23 @@ export function CanvasView({
    * unmounts these the instant their condition flips and there is nothing left on screen to fade.
    */
   const [handoffPresent, handoffOpen] = useOpenState(handoff);
+  const [switcherPresent, switcherOpen] = useOpenState(switching);
+  /**
+   * THE OTHER CANVASES, WITH WHAT IS IN THEM, and nothing when there is nowhere to go.
+   *
+   * The count is every declared frame across both views and both devices, which is what makes one row comparable
+   * to another: a canvas is big or small regardless of how its owner split it into flows. It is read from the
+   * declaration rather than from the manifest, so a canvas that has never been captured still says how big it is.
+   */
+  const siblings = useMemo(
+    () =>
+      Object.entries(canvases ?? {}).map(([slug, one]) => ({
+        slug,
+        title: shortName(one.title),
+        frames: allScreens(one).length,
+      })),
+    [canvases],
+  );
   const [reviewPresent, reviewOpen] = useOpenState(queueLength > 0);
   const [undoPresent, undoOpen] = useOpenState(removing !== null);
   /* Held separately because the bar outlives `removing`: it is still fading when the list is already null. */
@@ -1671,6 +1718,91 @@ export function CanvasView({
        * single white pill and the zones separated by hairlines rather than by boxes. No ring around the bar
        * either: the shadow is what lifts it off the stage.
        */}
+      {/**
+       * WHICH CANVAS YOU ARE IN, TOP LEFT, and it is one control because a canvas is one choice.
+       *
+       * The canvas is already this tool's top level of information architecture: its own frames, its own comments,
+       * its own review queue, its own index entry. The owner reached the same conclusion out loud after talking
+       * himself out of a bigger idea: *"maybe this element that could be in the top left corner could be a switcher
+       * between different canvases like that."* Nothing new is declared for it — it reads the registry the project
+       * already passes to the page.
+       *
+       * THE SAME SURFACE AS THE TOOLBAR, holding one action, so the corner reads as another instrument of the same
+       * kit rather than as a new kind of thing. The panel underneath borrows the hand-off's recipe for the same
+       * reason.
+       *
+       * ABSENT ON A ONE-CANVAS PROJECT, like the device switch on a one-device canvas: a control whose menu would
+       * hold the page you are already on is a control that does nothing.
+       */}
+      {siblings.length > 1 ? (
+        <div className="absolute left-5 top-5 z-[60]" data-canvas-switcher="">
+          <div
+            className="flex items-center rounded-full bg-[hsl(180_15%_5.5%)] px-2 py-2 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.04),0px_10px_32px_0px_rgba(0,0,0,0.04)]"
+            data-canvas-chrome=""
+          >
+            <button
+              type="button"
+              aria-expanded={switching}
+              title="Switch canvas"
+              onClick={() => setSwitching((was) => !was)}
+              className={cn(BAR_ITEM, BAR_PAD, BAR_QUIET)}
+            >
+              <span className="max-w-[220px] truncate">
+                {shortName(declaration.title)}
+              </span>
+              <IconChevron
+                className={cn(
+                  "transition-transform motion-reduce:transition-none",
+                  switching && "rotate-180",
+                )}
+              />
+            </button>
+          </div>
+          {switcherPresent ? (
+            <div
+              data-open={switcherOpen}
+              style={MOTION_STYLE}
+              className={cn(
+                "absolute left-0 top-[calc(100%+12px)] w-[320px] origin-top-left rounded-2xl bg-[hsl(180_15%_5.5%)] p-2 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.04),0px_10px_32px_0px_rgba(0,0,0,0.04)]",
+                PANEL_MOTION,
+              )}
+              data-canvas-chrome=""
+            >
+              {siblings.map((one) => (
+                /* A REAL LINK, because a canvas is a route: its shots, its comments and its review all live under
+                   that slug, and a client-side swap would have to re-fetch every one of them anyway. */
+                <a
+                  key={one.slug}
+                  href={`/design-canvas/${one.slug}`}
+                  aria-current={one.slug === canvas ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl px-3 py-2.5 text-[0.8125rem] transition-colors",
+                    one.slug === canvas
+                      ? "bg-white/[0.08] text-white"
+                      : "text-white/70 hover:bg-white/[0.06] hover:text-white",
+                  )}
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {one.title}
+                  </span>
+                  {/* The count, not a thumbnail strip: the canvas behind this panel is already the picture view. */}
+                  <span className="shrink-0 tabular-nums text-white/35">
+                    {one.frames}
+                  </span>
+                </a>
+              ))}
+              <span className="mx-3 my-1 block h-px bg-white/[0.08]" />
+              <a
+                href="/design-canvas"
+                className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-[0.8125rem] text-white/55 transition-colors hover:bg-white/[0.06] hover:text-white"
+              >
+                All canvases
+              </a>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div
         className="absolute left-1/2 top-5 z-[60] flex -translate-x-1/2 items-center gap-1 rounded-full bg-[hsl(180_15%_5.5%)] px-2 py-2 shadow-[0px_4px_16px_0px_rgba(0,0,0,0.04),0px_10px_32px_0px_rgba(0,0,0,0.04)]"
         data-canvas-chrome=""

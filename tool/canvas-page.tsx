@@ -33,7 +33,11 @@ export function CanvasPage({
   if (canvasHidden()) notFound();
   const declaration = canvases[canvas];
   if (!declaration) notFound();
-  return <CanvasView declaration={declaration} canvas={canvas} />;
+  /* THE WHOLE REGISTRY GOES DOWN, not just this canvas's declaration: the switcher in the top-left corner is a
+     list of the project's canvases, and this component is the only place that already holds them. */
+  return (
+    <CanvasView declaration={declaration} canvas={canvas} canvases={canvases} />
+  );
 }
 
 /**

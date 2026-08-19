@@ -201,6 +201,62 @@ if (Array.isArray(declaredKinds) && declaredKinds.length > 0) {
       `outside them becomes a failure instead of a heading nobody notices.`,
   );
 }
+
+/**
+ * HAS THIS CANVAS OUTGROWN ITSELF? — said out loud, with the split it thinks is there.
+ *
+ * A canvas grows one frame at a time and nobody notices the moment it stops being one thing. The owner noticed it
+ * for us: *"we are now at a point when the canvas becomes pretty big … it will start to be really difficult to
+ * understand for me and especially for other people … even if we look at the online store canvas, it has stuff
+ * related to the online store. It has stuff related to domains."* He was right, and the tool said nothing.
+ *
+ * TWO SIGNALS, AND BOTH HAVE TO AGREE, because either one alone cries wolf. Size on its own is not a problem — a
+ * long single feature is allowed to be long. What makes a canvas two canvases is size PLUS a seam: two families of
+ * route with no arrow crossing between them. The seam is computed from what the declaration already says, the
+ * route of every screen and the ends of every edge, so it needs nothing new to be declared.
+ *
+ * A NOTE AND NEVER A FAILURE, which is the owner's own call out of three offered: *"a note in the oracle"*. A canvas
+ * that is honestly one big feature is not broken, and a check that failed on it would teach everyone to raise the
+ * threshold rather than to think about the split.
+ */
+const FRAME_LIMIT = 45;
+const SECTION_LIMIT = 8;
+if (screens.length > FRAME_LIMIT || kindsInUse.length > SECTION_LIMIT) {
+  /* The first path segment of each screen's route, which is what a product's own navigation is built out of. */
+  const familyOf = (url) => {
+    try {
+      return new URL(url, "http://x").pathname.split("/").filter(Boolean)[0] ?? "/";
+    } catch {
+      return "/";
+    }
+  };
+  const families = new Map();
+  for (const screen of screens) {
+    const family = familyOf(screen.url);
+    families.set(family, (families.get(family) ?? 0) + 1);
+  }
+  /* A family is joined to another when an edge has one end in each: those two cannot be separated. */
+  const familyById = new Map(screens.map((screen) => [screen.id, familyOf(screen.url)]));
+  const joined = new Set();
+  for (const edge of edges) {
+    const a = familyById.get(edge.from);
+    const b = familyById.get(edge.to);
+    if (a && b && a !== b) joined.add([a, b].sort().join(" + "));
+  }
+  const loose = [...families.entries()]
+    .filter(([family]) => ![...joined].some((pair) => pair.split(" + ").includes(family)))
+    .sort((one, two) => two[1] - one[1]);
+  notes.push(
+    `this canvas holds ${screens.length} frames in ${kindsInUse.length} section(s), which is where a canvas starts ` +
+      `being hard to hold in one head.` +
+      (loose.length > 1
+        ? ` Route families that no arrow crosses: ${loose
+            .map(([family, count]) => `/${family} (${count})`)
+            .join(", ")}. A second canvas for one of them costs nothing but a slug — see SKILL.md on splitting.`
+        : ` Every route family here is joined by an arrow, so there is no clean seam to split on.`),
+  );
+}
+
 /* An edge with one end on this canvas and the other on nothing: a renamed or deleted screen left an arrow behind. */
 for (const edge of half)
   failures.push(

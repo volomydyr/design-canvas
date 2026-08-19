@@ -174,6 +174,15 @@ export function IconFrames(props: IconProps) {
   );
 }
 
+/** The disclosure mark on the canvas switcher: this control opens something. Rotates when it is open. */
+export function IconChevron(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 9.5l6 5.5 6-5.5" />
+    </Svg>
+  );
+}
+
 /** On the Open button under every frame: out of the picture, back to the running page. */
 export function IconOpenExternal(props: IconProps) {
   return (

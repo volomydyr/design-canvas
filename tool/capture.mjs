@@ -408,6 +408,43 @@ if (changedOnly) {
         `  \`--all\` captures everything regardless; check-canvas.mjs reports any drift this missed.\n`,
     );
   if (screens.length === 0) {
+    /**
+     * IT STILL PRUNES BEFORE IT LEAVES, which it did not, and that is how a deleted screen kept its picture.
+     *
+     * The pruning lives at the end of a capture, next to the manifest write, so this early exit skipped it: split a
+     * canvas in two, recapture, and every frame that moved away was still in the old manifest and still on disk,
+     * because nothing that REMAINED had changed. The oracle then reported thirty "captured and no longer declared"
+     * screens on a canvas that was perfectly correct, every run, forever.
+     *
+     * A screen leaving the declaration is a change like any other, so this branch does the same two things the full
+     * run does: delete the orphaned files, and write the manifest without them.
+     */
+    const gone = (previous.shots ?? []).filter(
+      (shot) => !declared.some((screen) => screen.id === shot.screenId),
+    );
+    if (gone.length > 0) {
+      for (const shot of gone) {
+        const file = path.join(SHOTS, shot.file);
+        if (existsSync(file)) rmSync(file);
+      }
+      writeFileSync(
+        path.join(SHOTS, "manifest.json"),
+        `${JSON.stringify(
+          {
+            ...previous,
+            shots: (previous.shots ?? []).filter(
+              (shot) => !gone.some((one) => one.screenId === shot.screenId),
+            ),
+          },
+          null,
+          2,
+        )}\n`,
+        "utf8",
+      );
+      console.log(
+        `${gone.length} no longer declared and removed: ${gone.map((shot) => shot.screenId).join(", ")}`,
+      );
+    }
     console.log("Nothing has changed. The canvas is up to date.");
     process.exit(0);
   }

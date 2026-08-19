@@ -127,6 +127,9 @@ for (const file of [
   /* Marking a round's comments as worked, in one command rather than one fetch each — the hand version left
      comments behind twice in one session. */
   "drain.mjs",
+  /* Splitting a canvas that has outgrown itself: the declaration is a text edit, but the REVIEW has to be moved
+     with the frames or the old file keeps notes about screens it no longer draws. */
+  "split-canvas.mjs",
   "dump-screens.mjs",
 ]) {
   put(path.join(SKILL, "tool", file), path.join("design-canvas", file));
