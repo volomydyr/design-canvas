@@ -109,7 +109,10 @@ const CONTRACT = [
   "have recaptured is the REVIEWER's to answer: they either approve it, which DELETES it, so a comment that",
   "has vanished since you recaptured was accepted, or they dismiss it with another round of feedback, which",
   "puts the new words in `note`, the words you already answered in `history`, and clears `consumedAt` — so it",
-  "arrives back in your queue with its picture redrawn from the current screenshot. `editedAt` means they",
+  "arrives back in your queue with its picture redrawn from the current screenshot. READ `history` BEFORE",
+  "`note` ON ANY COMMENT THAT HAS IT: a dismissal is the next message in a thread, not a new remark, and it is",
+  "usually written as one — \"you probably misunderstood me\", \"that is still wrong\" — which says nothing",
+  "without the round it is answering. The whole thread is what makes the problem legible. `editedAt` means they",
   "rewrote the words before you acted; the region and the picture are unchanged by an edit.",
 ].join(" ");
 

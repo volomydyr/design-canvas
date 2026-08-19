@@ -685,6 +685,32 @@ export function CanvasView({
     [waiting],
   );
   /**
+   * WHEN THE PILE INCLUDES A SECOND ROUND, THE PROMPT SAYS WHICH ONES AND WHY IT MATTERS.
+   *
+   * A dismissal is the next message in a thread: the reviewer's new words replace the note and the answered ones
+   * move into `history`. Those new words are almost never self-contained — *"You probably misunderstood me. When I
+   * say something like make this text one word longer…"* is a real one from this project — and an agent that reads
+   * `note` alone gets a complaint with no subject. The owner asked whether the whole thread travels: *"does the
+   * agent get the whole thread and not just the last comment? because with the whole history the agent can really
+   * understand the problem, and without it the new comment might sound confusing / not clear where it points at."*
+   *
+   * It does travel, in the file, and it always did. What was missing was anyone saying so at the moment of the
+   * hand-off, which is the only text an agent is guaranteed to read. Same shape as `homelessClause` below.
+   */
+  const threaded = useMemo(
+    () => waiting.filter((one) => (one.history?.length ?? 0) > 0),
+    [waiting],
+  );
+  const threadClause =
+    threaded.length === 0
+      ? ""
+      : ` ${threaded.length} of them (${threaded
+          .map((one) => one.id)
+          .join(
+            ", ",
+          )}) are second rounds: read their \`history\` before their \`note\`, oldest first, because the new words answer the old ones and rarely stand alone.`;
+
+  /**
    * WHEN THE PILE INCLUDES NOTES WHOSE FRAME IS GONE, THE PROMPT SAYS SO — and this is the fix for a real
    * confusion rather than a new warning on the canvas.
    *
@@ -718,7 +744,9 @@ export function CanvasView({
   const handoffText =
     (view === "explore" && handoffPanels.length > 0
       ? explorationHandoff(canvas, commentsFile, handoffPanels)
-      : handoffLine(canvas, commentsFile)) + homelessClause;
+      : handoffLine(canvas, commentsFile)) +
+    threadClause +
+    homelessClause;
 
   /**
    * MEASURED BY OBSERVER, NOT ONCE ON OPEN — because the panel opens with a transform.
@@ -1002,10 +1030,19 @@ export function CanvasView({
    */
   const onDelete = useCallback(
     async (id: string) => {
-      const wasAwaiting = comments.some(
-        (comment) =>
-          comment.id === id && comment.consumedAt && comment.stale === true,
+      const before = comments.filter(
+        (comment) => comment.consumedAt && comment.stale,
       );
+      const wasAwaiting = before.some((comment) => comment.id === id);
+      /**
+       * WHERE THE APPROVED ONE STOOD IN THE QUEUE, so the next one shown is the one AFTER it.
+       *
+       * This used `at ?? 0`, the stepper's own index, which is right when the reviewer is stepping and wrong when
+       * they are not: approving the third pin directly sent them to the FIRST comment awaiting approval, which
+       * from the reviewer's seat is a jump to somewhere unrelated. Taking the position from the comment actually
+       * approved makes "the next one" mean the next one in both cases.
+       */
+      const stood = before.findIndex((comment) => comment.id === id);
       const list = await deleteComment(canvas, id);
       setComments(list);
       if (!wasAwaiting) return;
@@ -1017,11 +1054,14 @@ export function CanvasView({
         setOpenPin(null);
         return;
       }
-      const index = Math.min(at ?? 0, queue.length - 1);
+      /* The list shrank under that position, so staying at it IS advancing — clamped for the last one. */
+      const index = Math.min(stood >= 0 ? stood : (at ?? 0), queue.length - 1);
       setAt(index);
       focus(queue[index]);
     },
-    [comments, at, focus],
+    /* `canvas` was missing and the lint rule was right: a canvas switched under this callback would delete from
+       the one it was created with. Harmless today, since the page remounts per slug, and cheap to be correct. */
+    [canvas, comments, at, focus],
   );
 
   /** The reviewer rewriting their own words, from the pin. Awaited, so the pin closes on the saved text. */
