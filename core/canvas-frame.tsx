@@ -231,6 +231,8 @@ export function CanvasFrame({
   onOpenPin,
   onTwin,
   chromeW,
+  revealed = true,
+  entranceDelay = 0,
 }: {
   /** Which canvas this frame belongs to. Namespaces the picture it asks for — see `src`. */
   canvas: string;
@@ -252,6 +254,15 @@ export function CanvasFrame({
    * (`chromeWidth` in graph-layout.ts). Absent means the picture's own width, which is every desktop frame.
    */
   chromeW?: number;
+  /**
+   * WHETHER THE WORLD HAS BEEN PLACED YET. A frame is invisible until it has, which is what removed the flash of
+   * the first screenshot blown up in the corner: there is nothing to see at the wrong transform.
+   *
+   * Defaults to true so a frame drawn outside a surface is not invisible by accident.
+   */
+  revealed?: boolean;
+  /** Milliseconds this frame waits before arriving, so a flow composes itself in its own order. */
+  entranceDelay?: number;
   screen: CanvasScreen;
   /** What was captured for this screen, or null when it has never been captured. */
   shot: CanvasShot | null;
@@ -601,7 +612,22 @@ export function CanvasFrame({
   return (
     <figure
       className="relative m-0"
-      style={{ width: w, height: h }}
+      style={{
+        width: w,
+        height: h,
+        /**
+         * THE ENTRANCE, AND IT IS THE ONLY MOTION HERE.
+         *
+         * Opacity alone: this element is one of dozens on a surface being panned and zoomed, and a transform or a
+         * filter on each of them is what turns the instrument into a slideshow. `entranceDelay` is the frame's
+         * place in the diagram's own reading order, so the canvas composes itself left to right rather than
+         * appearing as one block — and it is over inside a quarter second either way.
+         *
+         * Exponential ease-out from an already-final position: nothing slides in from anywhere.
+         */
+        opacity: revealed ? 1 : 0,
+        transition: `opacity 260ms cubic-bezier(0.16, 1, 0.3, 1) ${revealed ? entranceDelay : 0}ms`,
+      }}
       data-canvas-screen={screen.id}
     >
       {/**

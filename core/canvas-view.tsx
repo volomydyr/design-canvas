@@ -317,6 +317,20 @@ export function CanvasView({
    * here and landed on by the effect further down once it exists. It also tells the re-fit to stand aside.
    */
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
+  /**
+   * THE DIAGRAM COMPOSES ITSELF, which is this wait's own thesis rather than a loader borrowed from elsewhere.
+   *
+   * Two loading graphics were tried and both were rejected, the second bluntly: *"the loading visual looks like
+   * some weird bar chart. also it should not show the name of the canvas... it should be just a nice simple
+   * looking smooth loading animation."* The third attempt is not a graphic at all. Nothing is drawn on the stage;
+   * the frames arrive in the order the diagram reads, one column after another, 60ms apart and capped at 240 —
+   * which is what a canvas of flows genuinely is while it is being placed, and it is over before it can be
+   * mistaken for a wait.
+   *
+   * IT HAPPENS ONCE. `revealed` stays true, so a frame mounted by a later view or device switch renders already
+   * visible: switching tabs is a routine state change and does not get a page-load choreography.
+   */
+  const [revealed, setRevealed] = useState(false);
   const [comments, setComments] = useState<CanvasComment[]>([]);
   /** Which file the comments were read from, for the hand-off to name. See `CanvasCommentFile.file`. */
   const [commentsFile, setCommentsFile] = useState(
@@ -1230,6 +1244,9 @@ export function CanvasView({
         manifestLoaded={shots !== null}
         scale={declaration.frameScale}
         pins={pinsFor(node.screen.id)}
+        revealed={revealed}
+        /* The flow's own reading order: a column at a time, left to right, and nothing later than 240ms. */
+        entranceDelay={Math.min(node.rank * 60, 240)}
         /* Wider than the picture for a phone, so nothing under the frame has to shrink — see `chromeWidth`. */
         chromeW={chromeWidth(node.screen, forDevice, captured)}
         /**
@@ -1304,10 +1321,8 @@ export function CanvasView({
         opening={opening}
         onZoom={setZoom}
         locked={commenting}
-        /* WHAT THE LAUNCH STATE SAYS while the world is being placed. The surface owns when it shows and the
-           fade; the words are the canvas's own name, because the core knows nothing about what it is drawing
-           and a spinner with no subject says less than the title does. */
-        launch={declaration.title}
+        /* Placed means pointing somewhere worth looking at, which is when the frames may start arriving. */
+        onPlaced={() => setRevealed(true)}
       >
         {/* Every section first, so the panels paint UNDER the edges and the frames rather than over them. */}
         {/**
