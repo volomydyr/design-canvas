@@ -130,6 +130,9 @@ for (const file of [
   /* Splitting a canvas that has outgrown itself: the declaration is a text edit, but the REVIEW has to be moved
      with the frames or the old file keeps notes about screens it no longer draws. */
   "split-canvas.mjs",
+  /* Retiring an exploration owes the reviewer a walk through every screen the winner landed on, and the ones
+     that already existed are in `seen` already. This is the only thing that takes them back out of it. */
+  "unsee.mjs",
   /* The copy standard, imported by check-canvas.mjs. Without it the oracle cannot start. */
   "copy-rules.mjs",
   "dump-screens.mjs",

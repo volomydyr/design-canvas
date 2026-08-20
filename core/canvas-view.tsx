@@ -865,7 +865,25 @@ export function CanvasView({
    * second thing is the comment queue, which has its own bar and its own one-by-one approval.
    */
   const declaredIds = useMemo(
-    () => allScreens(declaration).map(({ screen }) => screen.id),
+    () =>
+      allScreens(declaration)
+        /**
+         * EXPLORATION FRAMES ARE NEVER "NEW", because every one of them always is.
+         *
+         * An exploration exists only while a design question is open, and its entire content is options the
+         * reviewer has not seen yet. Flagging them produces a count that can only ever equal the number of
+         * options, and offers to walk one by one through frames that were deliberately drawn side by side to be
+         * compared instead. The owner, on a round that arrived under "1 of 5 New Screens": *"the screens on the
+         * exploration tab do not need to be marked as new, because they are essentially all new. The new screen
+         * functionality that marks them with blue color and allows to review them one by one is supposed to be
+         * for the user flows and for the grouped screens."*
+         *
+         * So the queue covers the two PERMANENT views only, where a new frame really is an arrival among frames
+         * that were already there. It also keeps exploration ids out of `seen`, which is what makes retiring a
+         * spent round free: nothing recorded that they were ever looked at, so nothing is left counting them.
+         */
+        .filter(({ view }) => view !== "exploration")
+        .map(({ screen }) => screen.id),
     [declaration],
   );
   /**
@@ -885,9 +903,12 @@ export function CanvasView({
    * leaves `seen` as null rather than empty, so a canvas whose review file cannot be read claims nothing is new
    * instead of claiming everything is.
    */
+  /* `declaredIds` already excludes the exploration, so asking it is what keeps the blue ring off those frames
+     as well as keeping them out of the count above. Both halves of the mechanism, one source of truth. */
   const isNew = useCallback(
-    (id: string) => !CANVAS_PUBLISHED && seen !== null && !seen.includes(id),
-    [seen],
+    (id: string) =>
+      !CANVAS_PUBLISHED && seen !== null && declaredIds.includes(id) && !seen.includes(id),
+    [seen, declaredIds],
   );
   const newScreens = useMemo(
     () =>

@@ -122,6 +122,24 @@ deleted."_ So it is data, never structure:
 - The scaffolding that made a direction reachable at a URL goes with it — mark it
   `DELETE WITH: the <question> exploration`, not with the canvas folder. It has an earlier deletion date than
   everything else the install added.
+- **The new-screens queue never covers exploration frames.** The blue ring and the "N of M New Screens" stepper
+  belong to the two PERMANENT views, where a frame arriving among frames that were already there is news. On the
+  exploration tab every frame is new by definition, so the count can only ever equal the number of options, and
+  a one-by-one walk fights the whole point of drawing them side by side to be compared. Owner, seeing a round
+  arrive under "1 of 5 New Screens": _"the screens on the exploration tab do not need to be marked as new,
+  because they are essentially all new. The new screen functionality that marks them with blue color and allows
+  to review them one by one is supposed to be for the user flows and for the grouped screens."_
+  `canvas-view.tsx` enforces it by filtering `view === "exploration"` out of `declaredIds`, which keeps those
+  ids out of `seen` as well — so retiring a spent round leaves nothing behind that still counts it.
+- **BUT THE PROMOTED SCREENS ARE NEW, and marking them is not optional.** The moment the winner lands in the two
+  permanent views, every screen carrying it goes into the queue, because promotion is never one frame changing
+  tabs. Owner: _"when I approve the designs from the exploration and you move them to the other two tabs, it is
+  actually important to mark them as the new screens because it is very typical that in the exploration you show
+  only, let's say the most important parts of the design but when you connect it to the user flow so it consists
+  of many more screens that are related to the thing that we approved and picked to use as our design."_ Brand
+  new ids flag by themselves. Screens that ALREADY existed and whose design just changed do not — they are in
+  `seen` — so `unsee.mjs` takes them back out. Step 4 of the retirement below is where that happens, and skipping
+  it hands the reviewer a fan-out they were never shown.
 
 **Ask which views this canvas needs, with AskUserQuestion, before writing the declaration.** Multiselect, three
 options: grouped screens, user flows, exploration. A canvas built for handover wants the first two; a canvas
@@ -309,10 +327,30 @@ So retiring one has six steps, and none of them is optional:
    new copy, new failures — and the grouped view and the flows have to carry all of them, with the flow's edges
    extended to the new beats. Claims that quoted the old copy are now false and will fail the capture, which is
    the check working.
-5. **REMOVE THE `explorations` KEY** so the third tab disappears, then run a FULL capture: `--changed` will not
+
+   **THE EXPLORATION SHOWED A SLICE; THE FLOW SHOWS THE WHOLE THING.** An exploration frame is the one moment
+   that made the question decidable. Connected up, the same idea usually touches several states — the beats
+   before it, the failures around it, the version on the other device — so expect this step to produce MORE
+   screens than the round had options, not the same count.
+5. **MARK EVERY PROMOTED SCREEN AS NEW, so the reviewer walks the fan-out.** New ids flag by themselves. Screens
+   that already existed and whose design just changed are in `seen`, so they arrive silently unless you take them
+   out of it:
+
+   ```bash
+   node design-canvas/unsee.mjs --canvas <slug> --ids <every screen the winner landed on>
+   node design-canvas/unsee.mjs --canvas <slug> --list        # what is still marked seen
+   ```
+
+   Owner, on why this is not optional: _"it is actually important to mark them as the new screens because it is
+   very typical that in the exploration you show only, let's say the most important parts of the design but when
+   you connect it to the user flow so it consists of many more screens that are related to the thing that we
+   approved."_ Promotion is the one moment the queue exists for, and it is the one place the queue used to be
+   silent — a retirement that skips this looks finished and delivered no review.
+6. **REMOVE THE `explorations` KEY** so the third tab disappears, then run a FULL capture: `--changed` will not
    prune the frames of screens that no longer exist, and a full run says which it removed.
-6. **SAY WHAT WENT.** In the hand-over, list the deleted files and the deleted scaffolding, so nobody goes looking
-   for an option that no longer exists.
+7. **SAY WHAT WENT.** In the hand-over, list the deleted files and the deleted scaffolding, so nobody goes looking
+   for an option that no longer exists — and name the screens you put back in the new queue, so the walk is
+   expected rather than a surprise.
 
 ## What lands in the target project
 
