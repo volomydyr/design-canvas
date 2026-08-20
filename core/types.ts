@@ -57,6 +57,22 @@ export type CanvasScreen = {
   /** Groups this screen in the by-kind view, where flow order is dropped. */
   kind?: string;
   /**
+   * DRAWN IN THE USER FLOWS ONLY, and left out of the grouped screens.
+   *
+   * A journey has states a jeweler rarely meets: nothing named yet, an organization that already has
+   * an avatar, the second half of an error. They belong in the flow, because that is where the reader
+   * is following a path and a branch is the point. They do NOT belong in the grouped screens, where
+   * every frame is a peer of the others and a dozen near-identical edge cases side by side stop being
+   * comparable — which is the failure the owner named: *"at some point you start creating such big
+   * sections that they don't make sense anymore. You should not have a section with like dozens of
+   * screens placed horizontally… ideally only the main designs in the group screens and all the edge
+   * cases, things like that in the user flows."* (2026-08-20)
+   *
+   * The mirror of `groupedOnly` on a flow, at the grain that turned out to matter: one flow usually
+   * holds both the main path and its edge cases, so the choice is per screen and not per flow.
+   */
+  flowOnly?: boolean;
+  /**
    * IN AN EXPLORATION: this frame SUPPORTS the direction with that id, and is drawn under it.
    *
    * One frame per direction was not enough to judge one. A direction whose whole point is a tab that is one click
@@ -457,7 +473,7 @@ export function allScreens(declaration: CanvasDeclaration): Array<{
    * to count frames per view, and it is served to it rather than inferred, because a count that is quietly wrong
    * is how a canvas passes every check while missing half its frames.
    */
-  view: "flow" | "kinds" | "exploration";
+  view: "flow" | "kinds" | "flowOnly" | "exploration";
 }> {
   return [
     ...declaration.flows.flatMap((flow) =>
@@ -465,8 +481,13 @@ export function allScreens(declaration: CanvasDeclaration): Array<{
         screen,
         groupId: flow.id,
         groupTitle: flow.title,
-        /* "flow" is drawn by BOTH permanent views; "kinds" only by the grouped one. See `groupedOnly`. */
-        view: (flow.groupedOnly ? "kinds" : "flow") as "flow" | "kinds",
+        /* "flow" is drawn by BOTH permanent views, "kinds" only by the grouped one, "flowOnly" only by
+           the flows. See `groupedOnly` on the flow and `flowOnly` on the screen. */
+        view: (flow.groupedOnly
+          ? "kinds"
+          : screen.flowOnly
+            ? "flowOnly"
+            : "flow") as "flow" | "kinds" | "flowOnly",
       })),
     ),
     ...(declaration.explorations ?? []).flatMap((exploration) =>

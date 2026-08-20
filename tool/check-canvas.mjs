@@ -141,6 +141,10 @@ const VERBS = [
      something" needs a label for it. */
   "Types",
   "Fixes",
+  /* A hover is a beat too, and it had no verb: the affordance that appears under the pointer is the
+     step that teaches a control exists, so a flow that draws it needs a label for it. Device-neutral
+     on purpose — "Points" reads for a mouse and for a finger, "Hovers" only for one. */
+  "Points",
   "When",
 ];
 function checkLabels(edges) {
@@ -331,7 +335,12 @@ if (onDevice.length !== screens.length)
     `${screens.length} screens declared across devices; asserting the ${onDevice.length} on "${CANVAS_DEVICE}", which is what the canvas opens on`,
   );
 
-const flowScreens = onDevice.filter((screen) => screen.view === "flow");
+/* "flowOnly" is drawn by the flows view too: it is a screen kept OUT of the grouped one, not out of
+   the journey. Counting only "flow" here reported the flows view as over-full by exactly the number
+   of edge cases in it. */
+const flowScreens = onDevice.filter(
+  (screen) => screen.view === "flow" || screen.view === "flowOnly",
+);
 const kindScreens = onDevice.filter(
   (screen) => screen.view === "flow" || screen.view === "kinds",
 );
@@ -620,7 +629,14 @@ for (const screen of screens) {
        comparison to re-assert it rather than trusting the last one. */
     inView = null;
   }
-  const wants = screen.view === "exploration" ? "explore" : "kinds";
+  /* A flowOnly screen is not drawn in the grouped view at all, so asking for its picture there found
+     an empty frame every time. It lives in the flows, which is the whole point of the flag. */
+  const wants =
+    screen.view === "exploration"
+      ? "explore"
+      : screen.view === "flowOnly"
+        ? "flows"
+        : "kinds";
   /**
    * SWITCHING THE VIEW IS NOT INSTANT, and jumping in the same tick lands on the OLD layout.
    *

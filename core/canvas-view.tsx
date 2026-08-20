@@ -225,9 +225,50 @@ const handoffLine = (canvas: string, file: string, ids: string[]) =>
  */
 type HandoffPanel = { title: string; kept: string[]; dropped: string[] };
 
-const explorationHandoff = (canvas: string, file: string, panels: HandoffPanel[]) => {
+/**
+ * THE DECIDED HAND-OFF, and why the toggle above it exists.
+ *
+ * Every hand-off this function wrote used to ask for another round: refine the one that was liked, or
+ * build variations of the ones that were. That is right while a question is open and wrong the moment
+ * it closes, and nothing in the panel could say which. So the reviewer said it by hand, every time,
+ * in the chat — and an agent reading the generated prompt beside those words followed the prompt.
+ *
+ * Owner, 2026-08-20, after exactly that: *"maybe we need some kind of a handoff action in this mode
+ * that does not just give the comments, but also makes it clear to you that I made my decision using.
+ * And this handoff is the one that you need to do. remove the exploration and then apply it to the
+ * other two tabs… but we need to make it really clear. So it's clear what it means, not just to me,
+ * but to other colleagues of mine who use this skill as well. because right now I typically explain it
+ * to you every time myself."*
+ *
+ * `settled` is that switch. It changes the instruction rather than adding to it: no variations, apply
+ * the comments, retire the exploration, and move what was kept into the two permanent views.
+ */
+const explorationHandoff = (
+  canvas: string,
+  file: string,
+  panels: HandoffPanel[],
+  settled: boolean,
+) => {
   const dropped = panels.flatMap((one) => one.dropped);
   const judged = panels.filter((one) => one.kept.length > 0);
+  if (settled) {
+    const kept = judged.flatMap((one) => one.kept);
+    return [
+      "THE EXPLORATION IS DECIDED. This is its last round, and there are no more variations to build.",
+      kept.length > 0
+        ? `Keep: ${kept.join(", ")}.`
+        : "Keep whatever the comments approve.",
+      dropped.length > 0
+        ? `Delete these and the scaffolding only they used: ${dropped.join(", ")}.`
+        : "",
+      `Work the comments in ${file} first: they are changes to make to what was kept, not options to compare.`,
+      "Then DELETE the exploration entry from design-canvas/project/flows.ts, along with every piece of app-side scaffolding that existed only for it, and move the kept screens into the user flows and the grouped screens so they sit with the rest of the app.",
+      "Do not build another exploration round, and do not leave the exploration tab behind.",
+      "Then recapture with --changed and hand it back.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
   return [
     "The next round of the exploration in design-canvas/project/flows.ts.",
     dropped.length > 0
@@ -418,6 +459,8 @@ export function CanvasView({
   const [shots, setShots] = useState<Record<string, CanvasShot> | null>(null);
   const [commenting, setCommenting] = useState(false);
   const [handoff, setHandoff] = useState(false);
+  /** Whether the reviewer has marked the open question decided. See `explorationHandoff`. */
+  const [settled, setSettled] = useState(false);
   /** Whether the canvas switcher in the top-left corner is open. */
   const [switching, setSwitching] = useState(false);
   /* The only Next import in the view, and it is here so switching canvases does not reload the app. */
@@ -919,6 +962,56 @@ export function CanvasView({
   );
 
   /**
+   * WHICH TABS HOLD SOMETHING UNSEEN, so a tab can say so before it is opened.
+   *
+   * A round of feedback rarely lands evenly: eight new frames in the flows and two in the grouped
+   * screens is the normal shape, and the reviewer was expected to guess which tab to check. Owner,
+   * 2026-08-20: *"if after creating new screens, you have new screens that are available only on one
+   * of the two tabs… I need to see some kind of an indication over the tabs that there are something
+   * i should look at and in this case it can be like a blue dot or something like that in the corner
+   * of the tab, I think. just to indicate that, yeah, there is something new I should look at."*
+   *
+   * It reuses `newScreens` rather than counting again, so the dot and the review queue can never
+   * disagree: no queue, no dots. A `flowOnly` frame marks the flows tab alone, which is the case that
+   * made this necessary.
+   */
+  const unseenByTab = useMemo(() => {
+    const fresh = new Set(newScreens);
+    const byTab: Record<"flows" | "kinds", string[]> = { flows: [], kinds: [] };
+    for (const { screen, view: drawnIn } of allScreens(declaration)) {
+      if (!fresh.has(screen.id)) continue;
+      if (drawnIn === "flow") {
+        byTab.flows.push(screen.id);
+        byTab.kinds.push(screen.id);
+      } else if (drawnIn === "flowOnly") byTab.flows.push(screen.id);
+      else if (drawnIn === "kinds") byTab.kinds.push(screen.id);
+    }
+    return byTab;
+  }, [newScreens, declaration]);
+  const unseenTabs = useMemo(
+    () =>
+      new Set<ViewMode>(
+        (["flows", "kinds"] as const).filter((tab) => unseenByTab[tab].length > 0),
+      ),
+    [unseenByTab],
+  );
+  /**
+   * THE QUEUE BELONGS TO THE TAB YOU ARE STANDING ON.
+   *
+   * It counted every unseen frame on the canvas, so a tab holding three of them offered to walk you
+   * through eight, five of which it cannot draw. Owner, 2026-08-20: *"the blue toolbar that helps us
+   * find the ones that we need to review should work per tab. So if this tab has five designs, it
+   * should show me five. If the other one has three designs, it should show me three."*
+   *
+   * `isNew` stays global, because a frame is new wherever it is drawn and its ring should say so.
+   * Only the counting and the stepping are scoped, which is what the reviewer actually walks.
+   */
+  const newHere = useMemo(
+    () => (view === "explore" ? [] : unseenByTab[view]),
+    [unseenByTab, view],
+  );
+
+  /**
    * SEEDED ON FIRST SIGHT, or every frame on an existing canvas would be new at once.
    *
    * A canvas installed before this mechanism existed has no `seen` key, and an empty list would mean all
@@ -1002,7 +1095,7 @@ export function CanvasView({
    */
   const handoffText =
     (view === "explore" && handoffPanels.length > 0
-      ? explorationHandoff(canvas, commentsFile, handoffPanels)
+      ? explorationHandoff(canvas, commentsFile, handoffPanels, settled)
       : handoffLine(
           canvas,
           commentsFile,
@@ -1048,14 +1141,34 @@ export function CanvasView({
     ]
       .filter(Boolean)
       .join(", ") || "Nothing waiting yet";
+  /**
+   * WHAT THE REVIEWER IS OWED AN ANSWER ON — notes only, and the "only" is a bug fix.
+   *
+   * This counted every consumed comment on a recaptured screen, verdicts included. A like is not a
+   * question: the reviewer already gave it, it carries no words to reconsider, and its region is the
+   * whole frame with nothing drawn on it. So the bar offered three things to review on a canvas with
+   * one comment on it, and stepping through the other two flew to a full-frame rectangle with no
+   * marker in it. Owner, 2026-08-20: *"it showed me that there are three comments to review, while
+   * the canvas had only one screenshot with command. And when I click the chevrons to look at those
+   * other comments, it just point me at some areas, but no comment indicators at all."*
+   *
+   * A verdict leaves the pile the way it always did: the agent drains it with `consumed: true`, and
+   * `spent()` above drops it once its screen is gone.
+   */
   const toReview = useMemo(
-    () => visible.filter((comment) => comment.consumedAt && comment.stale),
+    () =>
+      visible.filter(
+        (comment) =>
+          comment.consumedAt &&
+          comment.stale &&
+          (!comment.kind || comment.kind === "note"),
+      ),
     [visible],
   );
   /* The bar is present when ANYTHING waits, and `queue` itself is built further down where both sets exist. */
-  const queueLength = newScreens.length + toReview.length;
+  const queueLength = newHere.length + toReview.length;
   /** Which kind the reviewer is standing on, which decides the bar's colour and its verb. */
-  const onNew = (at ?? 0) < newScreens.length;
+  const onNew = (at ?? 0) < newHere.length;
   /**
    * THE COUNT BELONGS TO THE KIND THE WORD NAMES, and reading it any other way was a lie.
    *
@@ -1067,8 +1180,8 @@ export function CanvasView({
    * So the position and the total are both taken inside the current kind. The stepper still walks one queue across
    * the boundary; the label just stops claiming the other side of it.
    */
-  const kindTotal = onNew ? newScreens.length : toReview.length;
-  const kindIndex = onNew ? (at ?? 0) : (at ?? 0) - newScreens.length;
+  const kindTotal = onNew ? newHere.length : toReview.length;
+  const kindIndex = onNew ? (at ?? 0) : (at ?? 0) - newHere.length;
 
   /**
    * THE THREE PIECES OF CHROME THAT COME AND GO, each kept mounted through its own exit transition.
@@ -1111,6 +1224,9 @@ export function CanvasView({
   const closeHandoff = useCallback(() => {
     setHandoff(false);
     setArmed(false);
+    /* Decided is a statement about ONE hand-off, not a mode the tool sits in. Left set, the next
+       panel would open already claiming a question is closed. Same reasoning as `armed` above. */
+    setSettled(false);
   }, []);
   useDismissOnOutside(handoff, handoffRef, closeHandoff);
   /**
@@ -1462,10 +1578,10 @@ export function CanvasView({
     >
   >(
     () => [
-      ...newScreens.map((screenId) => ({ kind: "new" as const, screenId })),
+      ...newHere.map((screenId) => ({ kind: "new" as const, screenId })),
       ...toReview.map((comment) => ({ kind: "comment" as const, comment })),
     ],
-    [newScreens, toReview],
+    [newHere, toReview],
   );
 
   /**
@@ -1483,7 +1599,14 @@ export function CanvasView({
       if (!found) return;
       const itsDevice = found.screen.device ?? DEFAULT_DEVICE;
       if (itsDevice !== device) setDevice(itsDevice);
-      const itsView: ViewMode = found.view === "exploration" ? "explore" : view === "flows" && found.view === "flow" ? "flows" : "kinds";
+      const itsView: ViewMode =
+        found.view === "exploration"
+          ? "explore"
+          : found.view === "flowOnly"
+            ? "flows"
+            : view === "flows" && found.view === "flow"
+              ? "flows"
+              : "kinds";
       if (itsView !== view) setView(itsView);
       if (itsDevice !== device || itsView !== view) setPendingFocus(screenId);
       else goToScreen(screenId);
@@ -1961,10 +2084,21 @@ export function CanvasView({
             className={cn(
               BAR_ITEM,
               BAR_PAD,
+              "relative",
               view === mode ? BAR_TAB_ON : BAR_QUIET,
             )}
           >
             {TAB_LABEL[mode]}
+            {/* The corner dot: something in this tab has not been looked at. It stays on the tab you
+                are standing on too — being on a tab is not reviewing it. Owner, 2026-08-20: "the tab
+                should have a blue circle, even if it's active because the blue circle disappears only
+                after I reviewed everything and I clicked that I reviewed it." */}
+            {unseenTabs.has(mode) ? (
+              <span
+                aria-label="Something new to look at"
+                className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[hsl(211_100%_60%)]"
+              />
+            ) : null}
           </button>
         ))}
 
@@ -2055,6 +2189,44 @@ export function CanvasView({
                 <p className="text-[0.8125rem] text-white">
                   {handoffSummary}. Give the agent this line:
                 </p>
+                {/**
+                 * DECIDED, and it sits ABOVE the prompt because it rewrites it. Below the prompt it
+                 * would read as an action on text already read, and the reviewer would paste the
+                 * wrong instruction and only then notice the switch.
+                 *
+                 * Exploration view only: there is nothing to retire anywhere else, and a toggle that
+                 * does nothing on two of three tabs is worse than no toggle.
+                 *
+                 * The second line is not decoration. It is the sentence the reviewer used to type into
+                 * the chat by hand, so the control has to say the same thing to a colleague who has
+                 * never typed it: what "decided" causes, in the words of the outcome.
+                 */}
+                {view === "explore" && handoffPanels.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSettled((on) => !on)}
+                    aria-pressed={settled}
+                    className="mt-3 flex w-full items-start gap-2.5 rounded-lg bg-white/[0.06] px-3 py-2.5 text-left"
+                  >
+                    <span
+                      className={cn(
+                        "mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border",
+                        settled
+                          ? "border-white bg-white text-[hsl(180_15%_5.5%)]"
+                          : "border-white/30",
+                      )}
+                    >
+                      {settled ? <IconCheck size={11} /> : null}
+                    </span>
+                    <span className="text-[0.75rem] leading-snug text-white">
+                      Check this when the exploration is done
+                      <span className="mt-0.5 block font-medium text-white/50">
+                        The agent will apply your comments, delete the exploration, and move what you
+                        kept into the user flows and grouped screens
+                      </span>
+                    </span>
+                  </button>
+                ) : null}
                 {/**
                  * A FIXED HEIGHT WITH THE SCROLL INSIDE IT, AND NO SCROLLBAR.
                  *
@@ -2249,7 +2421,7 @@ export function CanvasView({
            * So it is always the OPPOSITE of the bar beside it: colour, glyph and number. It only exists when there is
            * something on the other side, because a switch to an empty queue is a dead control.
            */}
-          {newScreens.length > 0 && toReview.length > 0 ? (
+          {newHere.length > 0 && toReview.length > 0 ? (
             /**
              * IT IS A BAR, NOT A BUTTON — the same container as the one beside it, holding one ordinary action.
              *
@@ -2277,9 +2449,9 @@ export function CanvasView({
                 aria-label={
                   onNew
                     ? `Comments to review (${toReview.length})`
-                    : `New screens (${newScreens.length})`
+                    : `New screens (${newHere.length})`
                 }
-                onClick={() => step(onNew ? newScreens.length : 0)}
+                onClick={() => step(onNew ? newHere.length : 0)}
                 className={cn(BAR_ITEM, REVIEW_QUIET, BAR_SQUARE)}
               >
                 {/* BOTH GLYPHS, STACKED, ONE FADING OUT AS THE OTHER FADES IN — over the same 220ms as the tint, so
@@ -2307,7 +2479,7 @@ export function CanvasView({
                   onNew ? "text-[hsl(154_46%_24%)]" : "text-[hsl(206_58%_30%)]",
                 )}
               >
-                {onNew ? toReview.length : newScreens.length}
+                {onNew ? toReview.length : newHere.length}
               </span>
             </div>
           ) : null}
@@ -2384,7 +2556,7 @@ export function CanvasView({
                * something to have looked at.
                */
               if (onNew) {
-                const ids = [...newScreens];
+                const ids = [...newHere];
                 if (ids.length === 0) return;
                 setAt(null);
                 void markSeen(canvas, ids).then(setSeen);

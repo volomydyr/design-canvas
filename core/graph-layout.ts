@@ -623,6 +623,8 @@ export function layoutKinds(
   >();
   for (const flow of declaration.flows) {
     for (const screen of flow.screens) {
+      /* An edge case belongs to its journey, not to a shelf of peers. See `flowOnly` in types.ts. */
+      if (screen.flowOnly) continue;
       const kind = screen.kind ?? "Other";
       byKind.set(kind, [...(byKind.get(kind) ?? []), { screen, flow }]);
     }

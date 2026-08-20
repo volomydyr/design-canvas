@@ -825,14 +825,44 @@ async function captureOne(screen, secondPass = false) {
      * being longer than a screen — so only an element at least half the viewport tall counts.
      */
     const scrolls = await page.evaluate((vh) => {
+      const pinned = (node) => {
+        for (let at = node; at && at !== document.documentElement; at = at.parentElement) {
+          if (getComputedStyle(at).position === "fixed") return true;
+        }
+        return false;
+      };
       let inner = 0;
+      let innerPinned = false;
       for (const node of document.querySelectorAll("*")) {
         const overflow = getComputedStyle(node).overflowY;
         if (overflow !== "auto" && overflow !== "scroll") continue;
         if (node.clientHeight < vh * 0.5) continue;
-        inner = Math.max(inner, node.scrollHeight - node.clientHeight);
+        const over = node.scrollHeight - node.clientHeight;
+        if (over <= inner) continue;
+        /**
+         * A SCROLLER PINNED TO THE VIEWPORT IS NOT THE PAGE BEING LONG, and missing that is what
+         * made dialogs taller than the design.
+         *
+         * The rule below is right about a route whose CONTENT COLUMN scrolls: on a taller monitor
+         * that column really is taller, so growing the window shows a real design. It is wrong about
+         * a DIALOG, which is sized to the viewport by definition — `position: fixed`, `max-h-[86vh]`
+         * — so its insides scroll at every window size, and growing the window photographs a dialog
+         * nobody at 1440x900 has ever seen.
+         *
+         * Measured on three frames of one canvas, which is what settled it: the storefront reports
+         * doc=4149 col=0 (a real long page), the Customize panel doc=900 col=254 pinned=false (a
+         * page column, correctly full length), and the media picker doc=900 col=435 pinned=true — a
+         * grid scrolling inside a centered dialog, and the only one of the three that was wrong.
+         * Owner, 2026-08-20, on that frame beside its two 900px neighbours: "here's a great example
+         * where the screen is long in height for no reason compared to the other ones near it."
+         */
+        if (pinned(node)) {
+          innerPinned = true;
+          continue;
+        }
+        inner = over;
       }
-      return { doc: document.documentElement.scrollHeight, inner };
+      return { doc: document.documentElement.scrollHeight, inner, innerPinned };
     }, shotViewport.h);
     const pageHeight = Math.max(scrolls.doc, shotViewport.h + scrolls.inner);
     const wholePage =
@@ -1212,7 +1242,23 @@ async function captureOne(screen, secondPass = false) {
         `${String(shotH).padStart(4)}px${wholePage ? "*" : " "} ` +
         `claims=${claims.length - missed.length}/${claims.length} stable=${stable}(${tries}) ` +
         `images=${media.shown - media.empty}/${media.shown} ` +
-        `${Math.round((Date.now() - started) / 100) / 10}s`,
+        `${Math.round((Date.now() - started) / 100) / 10}s` +
+        /**
+         * WHY THIS FRAME WENT FULL LENGTH, printed beside the frame that did it.
+         *
+         * A too-tall frame is easy to see on the canvas and impossible to explain from the picture:
+         * the two numbers that decided it live for one moment inside a `page.evaluate` and were never
+         * reported, so the only way to investigate was to re-run the pipeline with a patch in it.
+         * The reviewer met one in another project and could not say which frame or why. Owner,
+         * 2026-08-20: "some screens get way too big height... you need to fix it so it doesn't happen
+         * in future."
+         *
+         * `doc` is what the document claims, `col` is what the tallest inner scroller hides. If the
+         * height looks wrong, these two say which of them caused it — `doc` points at the page or at
+         * something absolutely positioned in it, `col` at a scrolling column. That is the difference
+         * between a real long page and a frame that should have stayed one screen.
+         */
+        `${wholePage ? ` whole:doc=${scrolls.doc},col=${scrolls.inner},pinned=${scrolls.innerPinned}` : ""}`,
     );
   } catch (error) {
     failures.push(`${screen.id}: ${error.message}`);
