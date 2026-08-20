@@ -161,7 +161,14 @@ the owner's instruction, not a layout accident:
 ## Explorations, while a question is open
 
 An `explorations` entry is one design question and the competing answers to it. It is the same `CanvasScreen`
-shape as everywhere else — real routes, real pinned states, real claims — with four differences that matter:
+shape as everywhere else — real routes, real pinned states, real claims — with the differences that matter below.
+
+**FIRST, THE TEST THAT DECIDES WHETHER THIS IS AN EXPLORATION.** The directions have to be different PATTERNS, and
+today's design is not one of them. Both rules are in the skill's own "The two rules that decide whether it is an
+exploration at all", both are the owner's, and a round that breaks either is thrown away rather than reviewed:
+same-component-with-toggles is not an exploration, and a frame of the incumbent wastes a panel on what is already
+in the permanent views. If the incumbent is a table, most directions must not be tables. A variations round
+happens only when he asks for one plainly.
 
 - **`surface` is the panel's heading, and it names the SCREEN rather than the exercise.** "The settings page
   while a sync is running", never "Option set A" and never the question on its own. A reviewer has to know what
@@ -169,8 +176,11 @@ shape as everywhere else — real routes, real pinned states, real claims — wi
   supposed to be… the title of the group of the section has to be really clear."_ The question goes in `title`
   and is drawn underneath.
 - **The options are NUMBERED from their order in `screens`.** The canvas draws 1..N on the frames because that
-  is what a reviewer says out loud. Order them deliberately: the first option should be the incumbent or the
-  most obvious answer, so the rest read as departures from it.
+  is what a reviewer says out loud. Order them deliberately: the most conventional departure first and the
+  boldest last, so reading left to right travels away from habit. THE INCUMBENT IS NOT OPTION ONE — it is not an
+  option at all. This bullet used to say "the first option should be the incumbent or the most obvious answer",
+  and that sentence is what produced a round whose first frame was the shipped design: _"there is no need to put
+  how the design looks today in the exploration. Why would you do that? This is not an exploration."_
 
 - **A screen is a DIRECTION, and its `label` is the direction's name.** "Run panel above the table", not "The
   integrations page". The label is what gets said out loud when choosing, so it has to name the difference
@@ -178,8 +188,9 @@ shape as everywhere else — real routes, real pinned states, real claims — wi
 - **No edges, ever.** Directions are alternatives; an arrow between two of them would claim a person can move
   from one to the other, and only one of them will ever exist.
 - **A round is an entry, not a nesting level.** Five directions is one exploration. Three variants of whichever
-  won is a second one below it, with `round` naming which is which. The rejected round stays visible beside the
-  refined one, which is the whole reason to keep both.
+  won REPLACES it, with `round` naming which is which. A judged round is spent and comes off the tab: _"I do not
+  need to see the old explorations from the first round. that's not how the exploration process works."_ (This
+  bullet said the rejected round stays visible, which contradicted the skill's own rule and the quote behind it.)
 
 Two or more screens, or there is nothing to compare, and the layout reports it as a problem rather than drawing
 a panel headed by a question with a single answer under it.

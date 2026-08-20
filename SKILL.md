@@ -99,6 +99,30 @@ different answers to one question, each a real route of the real app, drawn side
 disagree with each other visibly. It is the 5-then-3-then-1 funnel expressed as declaration — round one is one
 entry with five directions, round two REPLACES it with three variants of whichever won.
 
+### The two rules that decide whether it is an exploration at all
+
+**1. DIFFERENT PATTERNS, NOT SETTINGS OF ONE COMPONENT.** A round where every frame is the same component with
+pieces switched on and off is not an exploration, however different the frames measure. If the incumbent is a
+table, at least most of the directions must not be tables: a different pattern means a different way to solve the
+problem — a list, a stepper, a summary that drills in, a per-item card, a sheet, a page, an inline surface — not
+the same grid with fewer columns. Owner, 2026-08-20, on five variants of one failures table: _"It was never about
+simplifying the modal table. It was about finding completely different other patterns that suit this specific
+situation way better and make it all feel simpler and easier to understand. meaning that I don't need to see
+another table. It can be a modal, but it should not be a table."_ And on why the variants round is worse than
+useless: _"the idea of the exploration is typically about finding different ways how to solve and issue how to
+design something. Otherwise, it's not an exploration. It's just you giving me the same table without titles or
+with titles or without an explanation or with an explanation, which is just stupid."_
+
+A variation-of-the-incumbent round happens only when he ASKS for one: _"If I need a variation of the existing
+component, I will say it plainly."_ Feedback that a surface is too complicated, too heavy, or hard to understand
+is never that request — it is the signal that the pattern itself is the thing under question.
+
+**2. TODAY'S DESIGN IS NEVER ONE OF THE FRAMES.** The current design already exists in the two permanent views,
+which is where it is looked at. A frame of it inside the exploration spends a panel on the thing being departed
+from and quietly invites the round to be measured as edits to it. Owner, same round: _"there is no need to put how
+the design looks today in the exploration. Why would you do that? This is not an exploration."_ Compare against
+the live surface, never against a frame of it.
+
 **The previous round does not stay on the canvas.** Owner: _"I do not need to see the old explorations from the
 first round. that's not how the exploration process works."_ A round that has been judged is spent: its winners
 came back as variants and its losers are gone, so leaving it up puts rejected work next to live work and makes the
