@@ -254,6 +254,9 @@ function stampOf(screen) {
              kept its desktop shot, because nothing else about the declaration changed. */
           screen.device ?? null,
           screen.deviceViewport ?? null,
+          /* Declared interaction origins are measured at capture time, so declaring, editing or removing
+             one has to re-run the capture that measures it. */
+          screen.origins?.length ? screen.origins : null,
         ]),
       )
       .digest("hex")
@@ -373,7 +376,13 @@ if (screensFile) {
   }
   declaration = await listing.json();
 }
-const { viewport, screens: declared } = declaration;
+const { viewport, screens: served } = declaration;
+/**
+ * EXPLANATION FRAMES ARE NEVER CAPTURED. They have no route and no picture — they are text panels the flow
+ * view draws itself (see core/canvas-explain.tsx) — so they leave the run here, before selection, the warm
+ * pass, and the orphan prune ever see them. A screen with no url downstream of this line is a bug again.
+ */
+const declared = (served ?? []).filter((s) => !s.explain);
 /* What was captured last time, read before anything is taken, because `--changed` decides from it. */
 const manifestPath = path.join(SHOTS, "manifest.json");
 const previous = existsSync(manifestPath)
@@ -383,12 +392,20 @@ const shotOfPrevious = new Map(
   (previous.shots ?? []).map((shot) => [shot.screenId, shot]),
 );
 
-const screens =
+const screens = (
   only.length > 0
     ? declared.filter((s) => only.includes(s.id))
     : changedOnly
       ? declared.filter((s) => changedSince(s, shotOfPrevious.get(s.id)))
-      : declared;
+      : declared
+).filter((s) => {
+  /* A FROZEN screen is preserved history: its state no longer exists in the app, so any recapture — in any
+     mode — would replace the last true picture with today's wrong page. Skipped at this last gate and said
+     out loud. One with no picture yet captures once, then freezes. See `CanvasScreen.frozen`. */
+  if (!s.frozen || !shotOfPrevious.get(s.id)) return true;
+  console.log(`frozen ${s.id.padEnd(28)} preserved history — never recaptured`);
+  return false;
+});
 
 /**
  * WHAT WAS SKIPPED IS SAID OUT LOUD, always. Silent completeness is the failure mode of every incremental
@@ -665,10 +682,50 @@ const FREEZE = () => {
 
 /* ------------------------------------------------------------------ the run */
 
-const browser = await chromium.launch();
+/**
+ * AUTHENTICATION, for the app that will not show its screens to a stranger.
+ *
+ * A real product's pages sit behind a login, and the capture browser is a fresh profile with no cookies — so
+ * every frame comes out as the sign-in page, correct in every mechanical way and wrong as a canvas. The fix is
+ * Playwright's own storage state: the person logs in ONCE, by hand, in a browser that saves its cookies and
+ * localStorage to a file —
+ *
+ *   npx playwright open --save-storage=design-canvas/auth-state.json http://localhost:3030
+ *
+ * — and every capture after that loads the file here. `--storage-state <path>` names it per run;
+ * `CANVAS_STORAGE_STATE` names it once for a project (capture-run.mjs forwards both). The file holds live
+ * session tokens: it is gitignored by the installer, and no tool here ever prints its contents. Absent means
+ * what it always meant — a public app, captured anonymously.
+ */
+const storageState =
+  argOf("storage-state") ?? process.env.CANVAS_STORAGE_STATE ?? undefined;
+if (storageState && !existsSync(storageState)) {
+  console.error(
+    `--storage-state names ${storageState}, which does not exist. Log in once with\n` +
+      `  npx playwright open --save-storage=${storageState} <app url>\n` +
+      `and run the capture again.`,
+  );
+  process.exit(1);
+}
+
+/**
+ * WHICH BROWSER TAKES THE PICTURE. Playwright's bundled Chromium ships without the proprietary H.264
+ * codec, so a page that plays an MP4 renders its player as a black "An unknown error occurred" box —
+ * a state no user is ever in, photographed as if it were the design. A real app with video anywhere
+ * in its chrome needs the real browser: `--browser-channel chrome` (or `CANVAS_BROWSER_CHANNEL=chrome`,
+ * which capture-run.mjs forwards) launches the installed Chrome instead. Absent means the bundled
+ * Chromium, exactly as before.
+ */
+const browserChannel =
+  argOf("browser-channel") ?? process.env.CANVAS_BROWSER_CHANNEL ?? undefined;
+
+const browser = await chromium.launch(
+  browserChannel ? { channel: browserChannel } : {},
+);
 const context = await browser.newContext({
   viewport: { width: viewport.w, height: viewport.h },
   deviceScaleFactor: 1,
+  ...(storageState ? { storageState } : {}),
   /* Motion is still allowed to run: the point is to let it FINISH, so what is captured is the design the
      animation was taking the page to. Reduced motion would capture a different product. */
 });
@@ -865,16 +922,16 @@ async function captureOne(screen, secondPass = false) {
       return { doc: document.documentElement.scrollHeight, inner, innerPinned };
     }, shotViewport.h);
     const pageHeight = Math.max(scrolls.doc, shotViewport.h + scrolls.inner);
-    const wholePage =
+    let wholePage =
       CAPTURE_WHOLE_PAGES && pageHeight > shotViewport.h * LONG_PAGE_SLACK;
-    const shotH = wholePage ? Math.min(pageHeight, MAX_PAGE_H) : shotViewport.h;
+    let shotH = wholePage ? Math.min(pageHeight, MAX_PAGE_H) : shotViewport.h;
     /**
      * AN INNER SCROLLER IS OPENED BY GROWING THE WINDOW, not by editing its overflow. The column is sized to the
      * viewport, so a taller viewport is a taller column and the page lays itself out exactly as it would on a
      * tall monitor. Forcing `overflow: visible` instead reflows a flex column into something the design never
      * is — and a frame showing a state no user can see is the one thing this tool must not produce.
      */
-    const grown =
+    let grown =
       wholePage && scrolls.inner > 0 && scrolls.doc <= shotViewport.h;
     if (grown) {
       await page.setViewportSize({ width: shotViewport.w, height: shotH });
@@ -888,6 +945,47 @@ async function captureOne(screen, secondPass = false) {
         .catch(() => {
           neverLoaded = true;
         });
+    }
+    /**
+     * A LONG SHOT MUST HAVE CONTENT IN ITS LENGTH — verified on the OUTPUT, not predicted by the measure.
+     *
+     * The `pinned` skip above was the first patch for frames "long in height for no reason", and this is the
+     * second instance of the same class found the hard way: a fixed-height app shell whose table scrolls
+     * inside it measures a scrolling column, the window grows for it, the shell does not follow (an open
+     * modal can lock it), and the shot ships with a blank band under a one-screen page. Heuristics keep
+     * finding new shapes of this, so the decision is now checked against reality: after the long-page
+     * preparation, the deepest visible LEAF (containers stretch with the window and prove nothing) must sit
+     * meaningfully below one viewport — and when it does not, the extension revealed nothing and the frame
+     * goes back to one screen.
+     */
+    if (wholePage) {
+      const contentBottom = await page
+        .evaluate(() => {
+          let bottom = 0;
+          for (const el of document.body.querySelectorAll("*")) {
+            const isMedia = /^(IMG|VIDEO|CANVAS|SVG)$/.test(el.tagName);
+            if (el.children.length > 0 && !isMedia) continue;
+            const box = el.getBoundingClientRect();
+            if (box.width < 2 || box.height < 2) continue;
+            const edge = box.bottom + window.scrollY;
+            if (edge > bottom) bottom = edge;
+          }
+          return bottom;
+        })
+        .catch(() => shotH);
+      if (contentBottom <= shotViewport.h * LONG_PAGE_SLACK) {
+        wholePage = false;
+        grown = false;
+        shotH = shotViewport.h;
+        await page.setViewportSize({
+          width: shotViewport.w,
+          height: shotViewport.h,
+        });
+        await page.waitForTimeout(MIN_SETTLE_MS);
+        notes.push(
+          `${screen.id}: a long-page measure revealed no content below one screen — captured one viewport`,
+        );
+      }
     }
     /* And once more before the shutter, because the wait above is what gave the page time to render the
        parts that own the rest of the photography. */
@@ -1057,6 +1155,15 @@ async function captureOne(screen, secondPass = false) {
         met: !page_text.includes(absent),
       });
     }
+    /* Canvas-wide forbidden text, checked on EVERY frame: a first-run or promo overlay can land on any
+       screen, and the page's own claims still pass underneath it — this is the tripwire that fails the
+       polluted picture loudly instead of photographing it. See `CanvasDeclaration.forbid`. */
+    for (const banned of declaration.forbid ?? []) {
+      claims.push({
+        claim: `nothing saying "${banned}" — text this canvas forbids on every frame`,
+        met: !page_text.includes(banned),
+      });
+    }
     if (focusClaim) claims.push(focusClaim);
     if (screen.expectSelector) {
       let met = false;
@@ -1071,6 +1178,30 @@ async function captureOne(screen, secondPass = false) {
      * size is a hole in the picture, and a hole in a picture of a jewelry store is the difference between
      * reviewing a design and reviewing an empty layout. Counted rather than assumed, in every document.
      */
+    /**
+     * LATE ARRIVALS FINISH THEIR ENTRANCE. The freeze pauses animations, so a surface that mounts AFTER the
+     * freeze — a dialog the claims loop had to wait for — is pinned at frame zero of its own entry
+     * animation: present in the DOM, passing every claim, and INVISIBLE in both proof shots. Found by eyes
+     * on a canvas whose cancel dialog photographed as a bare page while claiming its own copy. So right
+     * before the shutter every animation is driven to its END state: finite ones land where they were
+     * headed, endless ones (which refuse to finish) are cancelled at rest. Deterministic stillness instead
+     * of paused chance.
+     */
+    for (const frame of page.frames()) {
+      await frame
+        .evaluate(() => {
+          for (const animation of document.getAnimations()) {
+            try {
+              animation.finish();
+            } catch {
+              animation.cancel();
+            }
+          }
+        })
+        .catch(() => undefined);
+    }
+    await page.waitForTimeout(150);
+
     let media = { shown: 0, empty: 0 };
     for (const frame of page.frames()) {
       const counted = await frame
@@ -1119,6 +1250,11 @@ async function captureOne(screen, secondPass = false) {
     let image = null;
     let stable = false;
     let tries = 0;
+    /* The `animated` hold: a surface that never settles cannot produce the same bytes twice, so the
+       two-identical-shots proof is impossible by declaration. The loop still runs in full — the retries
+       are also the page's settling time, and a single instant shot once photographed a list mid-load —
+       but a still-moving final shot is accepted as one instant of a moving surface instead of failing.
+       Every other check (claims, blank floor, images) still runs on it. */
     while (tries < STABLE_TRIES) {
       tries += 1;
       image = await shoot();
@@ -1128,6 +1264,72 @@ async function captureOne(screen, secondPass = false) {
       }
       previous = image;
       await page.waitForTimeout(STABLE_GAP_MS);
+    }
+
+    /**
+     * Step 5b — THE INTERACTION ORIGINS, MEASURED. Each declared `CanvasEdge.origin` on this screen is
+     * resolved on the settled page into the control's rectangle, in picture pixels. Resolution is strict
+     * on purpose: exactly one visible match, or the capture fails the way a missed claim does — a region
+     * that cannot be pinned to one control is a region that would drift, and a drawn ring around the
+     * wrong control is worse evidence than no ring. Text specs match the innermost visible element whose
+     * whole text is exactly the spec (so a button and the span inside it count once, not twice);
+     * `css=` specs go through querySelectorAll. Main frame only: a rectangle measured inside an iframe
+     * is in the wrong coordinate space for the picture.
+     */
+    const origins = [];
+    for (const wanted_origin of screen.origins ?? []) {
+      const found = await page
+        .evaluate((spec) => {
+          const visible = (el) => {
+            const box = el.getBoundingClientRect();
+            if (box.width < 3 || box.height < 3) return false;
+            const style = window.getComputedStyle(el);
+            return style.visibility !== "hidden" && style.display !== "none";
+          };
+          let matches = [];
+          if (spec.startsWith("css=")) {
+            matches = [...document.querySelectorAll(spec.slice(4))].filter(
+              visible,
+            );
+          } else {
+            const text = spec.trim();
+            const all = [...document.querySelectorAll("*")].filter(
+              (el) =>
+                visible(el) &&
+                (el.innerText ?? "").trim() === text &&
+                el.children.length < 12,
+            );
+            /* Innermost only: a pressed button matches along with every wrapper around it. */
+            matches = all.filter(
+              (el) => !all.some((other) => other !== el && el.contains(other)),
+            );
+          }
+          if (matches.length !== 1) return { count: matches.length };
+          const box = matches[0].getBoundingClientRect();
+          return {
+            count: 1,
+            x: Math.round(box.x + window.scrollX),
+            y: Math.round(box.y + window.scrollY),
+            w: Math.round(box.width),
+            h: Math.round(box.height),
+          };
+        }, wanted_origin.origin)
+        .catch(() => ({ count: 0 }));
+      if (found.count !== 1) {
+        claims.push({
+          claim: `origin "${wanted_origin.origin}" (edge to ${wanted_origin.to}) resolves to exactly one visible place — it resolved to ${found.count}`,
+          met: false,
+        });
+        continue;
+      }
+      origins.push({
+        to: wanted_origin.to,
+        origin: wanted_origin.origin,
+        x: found.x,
+        y: found.y,
+        w: found.w,
+        h: found.h,
+      });
     }
 
     const file = `${screen.id}.webp`;
@@ -1142,11 +1344,20 @@ async function captureOne(screen, secondPass = false) {
      * and nothing that was already proved is lost to it. A screen with no previous picture is written anyway,
      * because there is nothing to protect and an unfinished frame is better evidence than a missing one.
      */
+    /* A screen may declare its own honest holds: `brokenImages: true` says the APP fails to load images
+       here (a documented bug being photographed), `sparse` says the page is genuinely under the blank
+       floor. A flagged screen where every image loads still fails — the bug healed and the flag is stale. */
     const rejected = [
       claims.some((one) => !one.met) && "a claim it does not prove",
       neverLoaded && "a page that never finished arriving",
-      image.byteLength < MIN_BYTES && "a blank page",
-      media.empty > 0 && "images that never loaded",
+      image.byteLength < MIN_BYTES && !screen.sparse && "a blank page",
+      !screen.brokenImages &&
+        media.empty > 0 &&
+        `images that never loaded (${media.empty} of ${media.shown})`,
+      Boolean(screen.brokenImages) &&
+        media.shown > 0 &&
+        media.empty === 0 &&
+        "no broken image on a screen declared broken — the bug healed",
     ].filter(Boolean);
     const kept = shotOfPrevious.get(screen.id);
     if (rejected.length > 0 && kept && existsSync(path.join(SHOTS, kept.file))) {
@@ -1196,6 +1407,8 @@ async function captureOne(screen, secondPass = false) {
       capturedAt: new Date().toISOString(),
       claims,
       stable,
+      /* Declared perpetual motion — the oracle reads this to skip its own stability verdict. */
+      animated: Boolean(screen.animated),
       tries,
       hash,
       images: media,
@@ -1204,6 +1417,9 @@ async function captureOne(screen, secondPass = false) {
       /* What this picture is OF, hashed: the declaration and every file the screen names. `--changed` and the
          oracle both read it, which is how "recapture only what moved" is a decision rather than a memory. */
       stamp: stampOf(screen),
+      /* The measured interaction-origin rectangles, one per declared `CanvasEdge.origin`. Only present
+         when the screen declares any: an empty field on every shot would say "measured, found none". */
+      ...(screen.origins?.length ? { origins } : {}),
     };
     shots.push(shot);
     /* WHICH SCREENS THIS RUN ACTUALLY RE-PHOTOGRAPHED. Only fresh writes land here — a kept picture from a failed
@@ -1215,11 +1431,11 @@ async function captureOne(screen, secondPass = false) {
       failures.push(
         `${screen.id}: captured a page that does not have ${missed.map((one) => `"${one.claim}"`).join(", ")}`,
       );
-    if (!stable)
+    if (!stable && !screen.animated)
       failures.push(
         `${screen.id}: never captured the same picture twice — still moving`,
       );
-    if (image.byteLength < MIN_BYTES)
+    if (image.byteLength < MIN_BYTES && !screen.sparse)
       failures.push(
         `${screen.id}: the picture is ${image.byteLength} bytes, which is a blank page`,
       );
@@ -1231,13 +1447,17 @@ async function captureOne(screen, secondPass = false) {
       notes.push(
         `${screen.id}: ${stillMoving} animation(s) never ended and were pinned where they were`,
       );
-    if (media.empty > 0)
+    if (!screen.brokenImages && media.empty > 0)
       failures.push(
         `${screen.id}: ${media.empty} of ${media.shown} images on screen never loaded — the picture has holes in it`,
       );
+    else if (screen.brokenImages && media.shown > 0 && media.empty === 0)
+      failures.push(
+        `${screen.id}: declared broken images and every image loaded — the bug healed, update the declaration`,
+      );
 
     console.log(
-      `${missed.length === 0 && stable && !neverLoaded ? "ok  " : "FAIL"} ${screen.id.padEnd(28)} ` +
+      `${missed.length === 0 && (stable || screen.animated) && !neverLoaded ? "ok  " : "FAIL"} ${screen.id.padEnd(28)} ` +
         `${String(Math.round(image.byteLength / 1024)).padStart(4)}kb ` +
         `${String(shotH).padStart(4)}px${wholePage ? "*" : " "} ` +
         `claims=${claims.length - missed.length}/${claims.length} stable=${stable}(${tries}) ` +

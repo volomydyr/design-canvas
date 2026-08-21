@@ -41,6 +41,8 @@ import {
    copy for the same reason: this folder has to compile in a repo whose tsconfig, component library and
    utilities are all unknown to it. */
 import { CanvasEdgeLayer } from "./canvas-edges";
+import { CanvasOriginLayer } from "./canvas-origins";
+import { CanvasExplain } from "./canvas-explain";
 import { CanvasFrame, type NewRegionComment } from "./canvas-frame";
 import {
   CanvasSurface,
@@ -926,6 +928,8 @@ export function CanvasView({
          * spent round free: nothing recorded that they were ever looked at, so nothing is left counting them.
          */
         .filter(({ view }) => view !== "exploration")
+        /* Explanation panels are canvas chrome, not arrivals: nothing to review, so never in the queue. */
+        .filter(({ view }) => view !== "explain")
         .map(({ screen }) => screen.id),
     [declaration],
   );
@@ -1244,7 +1248,9 @@ export function CanvasView({
   const captured = useCallback(
     (id: string) => {
       const shot = shots?.[id];
-      return shot ? { w: shot.w, h: shot.h } : undefined;
+      /* `origins` rides along so the flow view can draw the interaction-origin rings where the capture
+         actually measured them. See `CanvasEdge.origin`. */
+      return shot ? { w: shot.w, h: shot.h, origins: shot.origins } : undefined;
     },
     [shots],
   );
@@ -1260,8 +1266,10 @@ export function CanvasView({
    */
   const forDevice = useMemo<CanvasDeclaration>(() => {
     if (devices.length < 2) return declaration;
+    /* An explanation panel narrates a step, not a device: the same beat exists on both, so it stays in
+       whichever device's flow it is declared in rather than defaulting to desktop and vanishing. */
     const mine = (screen: CanvasScreen) =>
-      (screen.device ?? DEFAULT_DEVICE) === device;
+      Boolean(screen.explain) || (screen.device ?? DEFAULT_DEVICE) === device;
     const flows = declaration.flows
       .map((flow) => {
         const screens = flow.screens.filter(mine);
@@ -1286,6 +1294,23 @@ export function CanvasView({
     if (view === "explore") return layoutExplorations(forDevice, captured);
     return layoutKinds(forDevice, captured);
   }, [view, forDevice, captured]);
+
+  /**
+   * THE INTERACTION-ORIGIN MODE. Off by default on purpose — several tinted rings per frame read as
+   * overload on a simple flow — and the toggle only exists at all when this view actually has a measured
+   * origin to show: a control that could never draw anything is a control that does nothing.
+   */
+  const [showOrigins, setShowOrigins] = useState(false);
+  const [hoveredOrigin, setHoveredOrigin] = useState<string | null>(null);
+  const hasOrigins = useMemo(
+    () =>
+      view === "flows" &&
+      layout.groups.some((group) =>
+        group.edges.some((edge) => edge.originBox),
+      ),
+    [view, layout],
+  );
+  const originsOn = hasOrigins && showOrigins;
 
 
   /**
@@ -1705,7 +1730,17 @@ export function CanvasView({
     return count;
   }, [layout]);
 
-  const frameFor = (node: LaidOutNode) => (
+  const frameFor = (node: LaidOutNode) =>
+    node.explain ? (
+      /* A text panel, not a picture: no shot, no Open, no pins, no verdicts. See canvas-explain.tsx. */
+      <div
+        key={`${node.group.id}-${node.screen.id}`}
+        className="absolute"
+        style={{ left: node.x, top: node.y }}
+      >
+        <CanvasExplain screen={node.screen} />
+      </div>
+    ) : (
     <div
       key={`${node.group.id}-${node.screen.id}`}
       className="absolute"
@@ -1868,7 +1903,12 @@ export function CanvasView({
             data-canvas-section={group.id}
           />
         ))}
-        <CanvasEdgeLayer groups={layout.groups} />
+        <CanvasEdgeLayer
+          groups={layout.groups}
+          showOrigins={originsOn}
+          hoveredOrigin={hoveredOrigin}
+          onHoverOrigin={setHoveredOrigin}
+        />
         {layout.groups.map((group) => (
           <Fragment key={group.id}>
             {/**
@@ -1895,6 +1935,14 @@ export function CanvasView({
             {group.nodes.map(frameFor)}
           </Fragment>
         ))}
+        {/* Above the frames, or a ring around a control would be painted under the picture it rings. */}
+        {originsOn ? (
+          <CanvasOriginLayer
+            groups={layout.groups}
+            hoveredOrigin={hoveredOrigin}
+            onHoverOrigin={setHoveredOrigin}
+          />
+        ) : null}
       </CanvasSurface>
 
       {/**
@@ -2101,6 +2149,28 @@ export function CanvasView({
             ) : null}
           </button>
         ))}
+
+        {/* THE INTERACTION-ORIGIN TOGGLE: flows view only, and only when a measured origin exists to
+            draw. Rests off — see the mode's note above the state it flips. */}
+        {hasOrigins ? (
+          <>
+            <span className="mx-1 h-5 w-px bg-white/[0.14]" />
+            <button
+              type="button"
+              aria-pressed={showOrigins}
+              title="Show where each move starts"
+              onClick={() => setShowOrigins((was) => !was)}
+              className={cn(
+                BAR_ITEM,
+                BAR_PAD,
+                showOrigins ? BAR_TAB_ON : BAR_QUIET,
+              )}
+              data-canvas-origins-toggle=""
+            >
+              Origins
+            </button>
+          </>
+        ) : null}
 
 
         {/**

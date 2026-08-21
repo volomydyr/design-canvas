@@ -100,6 +100,19 @@ draws each frame at the size it was captured at.
 
 Recapture named screens with `--only <id>,<id>`. Roughly two seconds a screen, four lanes at a time.
 
+**An app behind a login captures with a saved session.** Log in once, by hand, with
+`npx playwright open --save-storage=design-canvas/auth-state.json <app url>`, then pass
+`--storage-state design-canvas/auth-state.json` (or set `CANVAS_STORAGE_STATE`). The file holds live session
+tokens and is gitignored; frames full of sign-in pages mean the session expired — log in once again.
+
+**An app with video in its chrome captures on real Chrome.** The bundled Chromium has no H.264 codec, so
+MP4 players photograph as black error boxes. Pass `--browser-channel chrome` (or set
+`CANVAS_BROWSER_CHANNEL=chrome`) to launch the installed Chrome instead.
+
+**A step outside this app is an explanation frame.** A screen declared with `explain` and no `route` draws
+as a dashed text panel in the flows — a hosted checkout, a step on another device — and is never captured.
+See `design-canvas/project/flows.ts` for the field and the oracle's rules on it.
+
 **Capture on a quiet tree.** A dev server recompiling under another agent's edits returns blank pages, and
 a blank capture then looks like a pipeline bug when it is not one.
 

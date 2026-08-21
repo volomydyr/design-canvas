@@ -24,7 +24,7 @@
  * A failure here is a build error, not a note.
  */
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -82,8 +82,15 @@ const SHELL_SELECTOR =
    serve — and reading them separately is a second opinion rather than a shortcut. */
 async function declared() {
   const response = await fetch(`${shotsApi}&screens=1`);
-  const { screens, kinds, title, note, groups } = await response.json();
-  const source = readFileSync(path.join(HERE, "project", "flows.ts"), "utf8");
+  const { screens, kinds, title, note, groups, forbid } = await response.json();
+  /* A large declaration may live in its own file under project/canvases/ — the scrape reads them all,
+     and the both-ends filter below narrows to the canvas being checked. */
+  const declFiles = [path.join(HERE, "project", "flows.ts")];
+  const canvasesDir = path.join(HERE, "project", "canvases");
+  if (existsSync(canvasesDir))
+    for (const file of readdirSync(canvasesDir))
+      if (file.endsWith(".ts")) declFiles.push(path.join(canvasesDir, file));
+  const source = declFiles.map((file) => readFileSync(file, "utf8")).join("\n");
   const all = [
     ...source.matchAll(
       /from:\s*"([^"]+)",\s*to:\s*"([^"]+)"(?:,\s*label:\s*"([^"]+)")?/g,
@@ -108,7 +115,7 @@ async function declared() {
       (here.has(edge.from) || here.has(edge.to)) &&
       !(here.has(edge.from) && here.has(edge.to)),
   );
-  return { screens, edges, half, kinds, title, note, groups };
+  return { screens, edges, half, kinds, title, note, groups, forbid };
 }
 
 const failures = [];
@@ -176,6 +183,7 @@ const {
   title: canvasTitle,
   note: canvasNote,
   groups,
+  forbid,
 } = await declared();
 
 /**
@@ -210,6 +218,39 @@ for (const problem of checkCanvasCopy({
  * A canvas that declares nothing is not failed for it: the kinds in use are printed instead, so the next agent has
  * the list in front of it and can adopt one rather than invent a neighbour.
  */
+/**
+ * EXPLANATION FRAMES, and the rules that keep them honest. An explanation frame (`explain` set) is a text
+ * panel in the flows: never captured, never grouped, never an exploration option, and it proves nothing —
+ * so a route, a kind, or a claim on one is a declaration mistake, and a screen with NEITHER a route NOR an
+ * explanation is a frame about nothing. Failed here, before any of the checks below trip over the absence.
+ */
+const explainScreens = screens.filter((screen) => screen.explain);
+const explainIds = new Set(explainScreens.map((screen) => screen.id));
+for (const screen of screens) {
+  if (screen.explain) {
+    if (screen.url)
+      failures.push(
+        `${screen.id}: carries both a route and an explanation — there is nothing to open at an explanation frame, so drop one of them`,
+      );
+    if (screen.kind)
+      failures.push(
+        `${screen.id}: an explanation frame filed under "${screen.kind}" — it never appears in the grouped screens, so it takes no section`,
+      );
+    if (screen.view === "exploration")
+      failures.push(
+        `${screen.id}: an explanation frame inside an exploration — explanations narrate flows only`,
+      );
+    if ((screen.expect ?? []).length > 0 || (screen.expectMissing ?? []).length > 0)
+      failures.push(
+        `${screen.id}: claims on an explanation frame — nothing is captured there, so nothing can be proved`,
+      );
+  } else if (!screen.url) {
+    failures.push(
+      `${screen.id}: no route and no explanation — a screen is a picture of an address or an explanation of a step, never neither`,
+    );
+  }
+}
+
 const kindsInUse = [...new Set(screens.map((screen) => screen.kind).filter(Boolean))].sort();
 if (Array.isArray(declaredKinds) && declaredKinds.length > 0) {
   const known = new Set(declaredKinds.map((one) => one.id));
@@ -366,6 +407,8 @@ const views = exploreScreens.length > 0 ? ["flows", "kinds", "explore"] : ["flow
  */
 const byUrl = new Map();
 for (const screen of screens) {
+  /* An explanation frame has no address to collide on; a routeless real screen already failed above. */
+  if (!screen.url) continue;
   const key = `${screen.device ?? "desktop"} ${screen.url}`;
   const seen = byUrl.get(key);
   if (seen)
@@ -455,10 +498,52 @@ if (outstanding.length > 0)
   );
 
 for (const screen of screens) {
+  /* Nothing was captured on purpose: an explanation frame is drawn by the canvas, not photographed. */
+  if (screen.explain) {
+    /* And nothing can be measured on it either: an origin needs a live page to resolve against. */
+    if ((screen.origins ?? []).length > 0)
+      failures.push(
+        `${screen.id}: an explanation frame cannot own an interaction origin — there is no page to measure "${screen.origins[0].origin}" on`,
+      );
+    continue;
+  }
   const shot = shotOf.get(screen.id);
   if (!shot) {
     failures.push(`${screen.id}: declared and never captured`);
     continue;
+  }
+  /**
+   * EVERY DECLARED INTERACTION ORIGIN WAS MEASURED, and nothing measured is still declared. The capture
+   * resolves each `CanvasEdge.origin` into a rectangle or fails; this is the net under the run where the
+   * declaration changed and nobody recaptured — a ring drawn from a stale rectangle circles the wrong
+   * control while every claim still passes.
+   */
+  for (const wanted of screen.origins ?? []) {
+    const measured = (shot.origins ?? []).find(
+      (one) => one.to === wanted.to && one.origin === wanted.origin,
+    );
+    if (!measured)
+      failures.push(
+        `${screen.id}: the edge to ${wanted.to} declares origin "${wanted.origin}" and the capture never measured it — recapture this screen`,
+      );
+    else if (
+      ![measured.x, measured.y, measured.w, measured.h].every(Number.isFinite) ||
+      measured.w < 3 ||
+      measured.h < 3
+    )
+      failures.push(
+        `${screen.id}: the measured origin "${wanted.origin}" is not a usable rectangle (${measured.x},${measured.y} ${measured.w}x${measured.h})`,
+      );
+  }
+  for (const measured of shot.origins ?? []) {
+    if (
+      !(screen.origins ?? []).some(
+        (one) => one.to === measured.to && one.origin === measured.origin,
+      )
+    )
+      failures.push(
+        `${screen.id}: the manifest holds an origin for the edge to ${measured.to} ("${measured.origin}") that the declaration no longer declares — recapture this screen`,
+      );
   }
   if (shot.url !== screen.url)
     failures.push(
@@ -471,13 +556,22 @@ for (const screen of screens) {
     );
   if ((shot.claims ?? []).length === 0)
     notes.push(`${screen.id}: nothing asserted about this screen`);
-  if (!shot.stable)
+  if (!shot.stable && !screen.animated)
     failures.push(
       `${screen.id}: two captures came out different, so the page was still moving`,
     );
-  if (shot.images && shot.images.empty > 0)
+  if (shot.images && shot.images.empty > 0 && !screen.brokenImages)
     failures.push(
       `${screen.id}: ${shot.images.empty} image(s) on screen never loaded, so the picture has holes in it`,
+    );
+  else if (
+    screen.brokenImages &&
+    shot.images &&
+    shot.images.shown > 0 &&
+    shot.images.empty === 0
+  )
+    failures.push(
+      `${screen.id}: declared broken images and every image loaded — the bug healed, update the declaration`,
     );
   if (!existsSync(path.join(HERE, "shots", canvasSlug, shot.file)))
     failures.push(
@@ -514,7 +608,7 @@ for (const screen of screens) {
         : "missing";
       if (now !== was) moved.push(file);
     }
-    if (moved.length > 0)
+    if (moved.length > 0 && !screen.frozen)
       notes.push(
         `${screen.id}: captured before ${moved.join(", ")} changed — recapture it with capture.mjs --changed`,
       );
@@ -538,8 +632,27 @@ console.log(
 
 /* ----------------------------------------------------------------- the canvas */
 
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+/**
+ * AN APP BEHIND A LOGIN GUARDS ITS CANVAS TOO. This browser opens the canvas page itself, and on an
+ * authenticated app that page 307s to the sign-in screen and `__devCanvas` never appears — the oracle
+ * times out before asserting anything. Same remedy as the capture: `--storage-state <path>` or
+ * `CANVAS_STORAGE_STATE`, the saved session the owner made once. `--browser-channel` /
+ * `CANVAS_BROWSER_CHANNEL` rides along for apps whose pages need the real Chrome. Both absent means
+ * exactly the old behavior.
+ */
+const storageState =
+  argOf("storage-state") ?? process.env.CANVAS_STORAGE_STATE ?? undefined;
+const browserChannel =
+  argOf("browser-channel") ?? process.env.CANVAS_BROWSER_CHANNEL ?? undefined;
+
+const browser = await chromium.launch(
+  browserChannel ? { channel: browserChannel } : {},
+);
+const checkContext = await browser.newContext({
+  viewport: { width: 1600, height: 1000 },
+  ...(storageState ? { storageState } : {}),
+});
+const page = await checkContext.newPage();
 page.on("pageerror", (error) => failures.push(`page error: ${error.message}`));
 
 await page.goto(canvasUrl, { waitUntil: "domcontentloaded" });
@@ -628,6 +741,44 @@ for (const screen of screens) {
     /* A device switch re-fits the canvas, so whatever view was showing is showing a new world: force the next
        comparison to re-assert it rather than trusting the last one. */
     inView = null;
+  }
+  /**
+   * AN EXPLANATION FRAME HAS NO PICTURE TO ASSERT — its check is that the PANEL is on the flows view,
+   * drawn by the canvas itself, exactly once. `data-canvas-explain` is its mark; asking for an `img`
+   * inside it would fail a node that is correct by design.
+   */
+  if (screen.explain) {
+    if (inView !== "flows") {
+      await page.evaluate((next) => window.__devCanvas.setView(next), "flows");
+      await page.waitForTimeout(500);
+      inView = "flows";
+    }
+    await page.evaluate((id) => window.__devCanvas.goTo(id), screen.id);
+    const panels = await page
+      .locator(`[data-canvas-explain="${screen.id}"]`)
+      .count()
+      .catch(() => 0);
+    if (panels !== 1)
+      failures.push(
+        `${screen.id}: its explanation panel appears ${panels} time(s) on the flows view, not once`,
+      );
+    /* THREE KINDS, THREE CHROMES — the rendered kind must match the declared one, or a boundary node
+       quietly reads as a third party's page (the confusion the split exists to prevent). The declared
+       value "canvas:<slug>" renders as the attribute "canvas". */
+    if (panels === 1) {
+      const declaredKind = (screen.explainKind ?? "outside").startsWith("canvas:")
+        ? "canvas"
+        : (screen.explainKind ?? "outside");
+      const renderedKind = await page
+        .locator(`[data-canvas-explain="${screen.id}"]`)
+        .getAttribute("data-canvas-explain-kind")
+        .catch(() => null);
+      if ((renderedKind ?? "outside") !== declaredKind)
+        failures.push(
+          `${screen.id}: declared explainKind "${screen.explainKind ?? "outside"}" but the panel renders as "${renderedKind ?? "outside"}"`,
+        );
+    }
+    continue;
   }
   /* A flowOnly screen is not drawn in the grouped view at all, so asking for its picture there found
      an empty frame every time. It lives in the flows, which is the whole point of the flag. */
@@ -752,12 +903,18 @@ const attachment = () =>
       point.x <= rect.right + 3 &&
       point.y >= rect.top - 3 &&
       point.y <= rect.bottom + 3;
+    /* An edge end can be a captured frame OR an explanation panel — both are real nodes on the path,
+       and each carries its id under its own mark. Looking up only data-canvas-screen made every edge
+       through an explain node read as detached, which the first real trial caught. */
+    const frameOf = (id) =>
+      document.querySelector(`[data-canvas-screen="${id}"]`) ??
+      document.querySelector(`[data-canvas-explain="${id}"]`);
     return [...document.querySelectorAll("path[data-canvas-edge]")].map(
       (path) => {
         const pair = path.getAttribute("data-canvas-edge");
         const [from, to] = pair.split("->");
-        const a = document.querySelector(`[data-canvas-screen="${from}"]`);
-        const b = document.querySelector(`[data-canvas-screen="${to}"]`);
+        const a = frameOf(from);
+        const b = frameOf(to);
         if (!a || !b)
           return { pair, attached: false, why: "an end of it names no frame" };
         const matrix = path.getScreenCTM();
@@ -788,12 +945,17 @@ const attachment = () =>
  */
 const crossings = () =>
   page.evaluate(() => {
-    const frames = [...document.querySelectorAll("[data-canvas-screen]")].map(
-      (node) => ({
-        id: node.getAttribute("data-canvas-screen"),
-        box: node.getBoundingClientRect(),
-      }),
-    );
+    /* Explanation panels are frames for this rule too: an edge slicing through one is exactly as
+       misleading as one slicing through a picture. */
+    const frames = [
+      ...document.querySelectorAll("[data-canvas-screen]"),
+      ...document.querySelectorAll("[data-canvas-explain]"),
+    ].map((node) => ({
+      id:
+        node.getAttribute("data-canvas-screen") ??
+        node.getAttribute("data-canvas-explain"),
+      box: node.getBoundingClientRect(),
+    }));
     const bad = [];
     for (const path of [
       ...document.querySelectorAll("path[data-canvas-edge]"),
@@ -836,6 +998,73 @@ for (const edge of crossed)
   failures.push(`edge ${edge.pair} is drawn across ${edge.over.join(", ")}`);
 if (crossed.length === 0)
   console.log(`no edge crosses a frame it does not belong to`);
+
+/**
+ * THE INTERACTION-ORIGIN MODE, EXERCISED LIKE A REVIEWER WOULD. When any measured origin exists the
+ * toggle has to exist, the rings have to be ABSENT while it rests off, and one press has to draw exactly
+ * one numbered ring per measured origin with its edge re-anchored. Checked from the DOM rather than
+ * trusted, because a ring that silently fails to draw turns the mode into a control that lies.
+ */
+const declaredOrigins = screens.flatMap((screen) =>
+  (screen.origins ?? []).map((one) => ({ from: screen.id, ...one })),
+);
+const measuredOrigins = declaredOrigins.filter((one) => {
+  const shot = shotOf.get(one.from);
+  return (shot?.origins ?? []).some(
+    (measured) => measured.to === one.to && measured.origin === one.origin,
+  );
+});
+if (measuredOrigins.length > 0) {
+  const toggles = await page.locator("[data-canvas-origins-toggle]").count();
+  if (toggles !== 1) {
+    failures.push(
+      `the canvas holds ${measuredOrigins.length} measured origin(s) and ${toggles} origin toggle(s) — the mode is unreachable`,
+    );
+  } else {
+    const before = await page.locator("[data-canvas-origin]").count();
+    if (before > 0)
+      failures.push(
+        `${before} origin ring(s) are drawn while the mode is off — it must rest off`,
+      );
+    await page.locator("[data-canvas-origins-toggle]").click();
+    await page.waitForTimeout(200);
+    const rings = await page.evaluate(() =>
+      [...document.querySelectorAll("[data-canvas-origin]")].map((el) => ({
+        pair: el.getAttribute("data-canvas-origin"),
+        spec: el.getAttribute("data-canvas-origin-spec"),
+      })),
+    );
+    for (const wanted of measuredOrigins) {
+      const drawn = rings.filter(
+        (ring) =>
+          ring.pair === `${wanted.from}->${wanted.to}` &&
+          ring.spec === wanted.origin,
+      );
+      if (drawn.length !== 1)
+        failures.push(
+          `origin "${wanted.origin}" on ${wanted.from} → ${wanted.to}: drawn ${drawn.length} time(s) with the mode on, not once`,
+        );
+    }
+    if (rings.length !== measuredOrigins.length)
+      failures.push(
+        `${rings.length} origin ring(s) drawn with the mode on, ${measuredOrigins.length} measured in the manifest`,
+      );
+    const anchored = await page
+      .locator("path[data-canvas-edge-anchored]")
+      .count();
+    if (anchored !== measuredOrigins.length)
+      failures.push(
+        `${anchored} edge(s) re-anchored to their origin ring, ${measuredOrigins.length} expected`,
+      );
+    /* Back off, so the pan and zoom below run the canvas in its resting state. */
+    await page.locator("[data-canvas-origins-toggle]").click();
+    await page.waitForTimeout(200);
+    if (failures.length === 0)
+      console.log(
+        `interaction origins: ${measuredOrigins.length} numbered ring(s) drawn with the mode on, none at rest`,
+      );
+  }
+}
 
 /* Pan and zoom as REAL INPUT. Calling the canvas's own methods would prove the methods, not the gestures:
    the drag goes through the pointer handlers and the zoom through the wheel handler with the modifier set,
@@ -1136,7 +1365,14 @@ for (const mode of views) {
   await page.evaluate((next) => window.__devCanvas.setView(next), mode);
   await page.waitForTimeout(400);
   const groups = await page.evaluate(() => window.__devCanvas.groups());
-  const total = groups.reduce((sum, group) => sum + group.screens.length, 0);
+  /* Explanation panels are counted apart: they are nodes in a flow's layout, but they are not frames, and
+     folding them into the frame count would let a missing PICTURE hide behind a present PANEL. */
+  const real = (group) => group.screens.filter((id) => !explainIds.has(id));
+  const total = groups.reduce((sum, group) => sum + real(group).length, 0);
+  const explainsDrawn = groups.reduce(
+    (sum, group) => sum + (group.screens.length - real(group).length),
+    0,
+  );
   /* Per view: the flow view holds the journeys, the grouped view holds those plus every comparison set, and the
      exploration tab holds the directions. */
   const expected =
@@ -1148,6 +1384,14 @@ for (const mode of views) {
   if (total !== expected)
     failures.push(
       `${mode}: ${total} frames across its groups, not the declared ${expected}`,
+    );
+  if (mode === "flows" && explainsDrawn !== explainScreens.length)
+    failures.push(
+      `flows: ${explainsDrawn} explanation panel(s) across its groups, not the declared ${explainScreens.length}`,
+    );
+  if (mode !== "flows" && explainsDrawn !== 0)
+    failures.push(
+      `${mode}: ${explainsDrawn} explanation panel(s) drawn in a view that must not hold any`,
     );
   /**
    * A GROUP OF ONE IS A BUG IN THE TWO PERMANENT VIEWS AND THE CORRECT END STATE IN AN EXPLORATION.
@@ -1161,14 +1405,78 @@ for (const mode of views) {
    * pushed an agent to invent a second option nobody asked for.
    */
   if (mode !== "explore")
-    for (const group of groups.filter((one) => one.screens.length < 2))
+    /* Counted on REAL frames: a flow of one screen and one explanation panel is still a flow of one. */
+    for (const group of groups.filter((one) => real(one).length < 2))
       failures.push(
-        `${mode}: "${group.title}" is a group of ${group.screens.length}, which is not a group`,
+        `${mode}: "${group.title}" is a group of ${real(group).length}, which is not a group`,
       );
   console.log(
     `${mode}: ${groups.length} groups, ${total} frames, smallest ${Math.min(
       ...groups.map((group) => group.screens.length),
     )}`,
+  );
+}
+
+/**
+ * THE OPEN BUTTON MUST LAND ON WHAT THE PICTURE SHOWS. Every frame carries an Open button to its real URL,
+ * and a canvas whose buttons land somewhere else is lying about its own pictures — found live when a whole
+ * family of parameter-pinned dialog states opened as bare pages, because the served app was started without
+ * the env flag its review-only seams are gated on. So every captured, non-frozen screen's URL is opened here
+ * against the SERVED app and its own claims re-asserted on the live page: what must be there, what must not,
+ * and the canvas-wide forbidden text. A frozen screen is skipped by definition — its state no longer exists
+ * in the app, its picture is preserved history, and its Open lands on today's page.
+ */
+{
+  let opened = 0;
+  for (const screen of screens) {
+    if (!screen.url || screen.explain || screen.frozen) continue;
+    const live = await checkContext.newPage();
+    try {
+      await live.goto(base + screen.url, {
+        waitUntil: "domcontentloaded",
+        timeout: 45_000,
+      });
+      const wanted = screen.expect ?? [];
+      const banned = [...(screen.expectMissing ?? []), ...(forbid ?? [])];
+      const readAll = async () => {
+        let text = "";
+        for (const frame of live.frames())
+          text += await frame
+            .evaluate(() => document.body?.innerText ?? "")
+            .catch(() => "");
+        return text;
+      };
+      let text = await readAll();
+      /* The same bounded re-read the capture gives claims: dialogs mount after the page settles. */
+      const until = Date.now() + 20_000;
+      while (
+        Date.now() < until &&
+        !wanted.every((claim) => text.includes(claim))
+      ) {
+        await live.waitForTimeout(500);
+        text = await readAll();
+      }
+      for (const claim of wanted)
+        if (!text.includes(claim))
+          failures.push(
+            `${screen.id}: its Open destination does not show "${claim}" on the served app — the button does not land on the picture`,
+          );
+      for (const nope of banned)
+        if (text.includes(nope))
+          failures.push(
+            `${screen.id}: its Open destination shows "${nope}" on the served app`,
+          );
+      opened += 1;
+    } catch (error) {
+      failures.push(
+        `${screen.id}: its Open destination did not load — ${error.message}`,
+      );
+    } finally {
+      await live.close();
+    }
+  }
+  console.log(
+    `open destinations: ${opened} live URLs re-proved their claims on the served app`,
   );
 }
 

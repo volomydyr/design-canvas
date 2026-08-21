@@ -46,8 +46,15 @@ export type CanvasScreen = {
   label: string;
   /** One line saying what it is. Not a description of the layout — what it is FOR. */
   note: string;
-  /** The real route, including any query the app itself already understands (`?preview=1`). */
-  route: string;
+  /**
+   * The real route, including any query the app itself already understands (`?preview=1`).
+   *
+   * REQUIRED on every real screen. The one screen allowed to omit it is an EXPLANATION FRAME
+   * (`explain` set): there is nothing to open, nothing to photograph, and a placeholder route here
+   * would collide with the no-two-screens-share-an-address rule. The oracle fails a screen that has
+   * neither `route` nor `explain`.
+   */
+  route?: string;
   /**
    * A named state applied to the running app inside this frame, as `?canvas=<state>`. OPTIONAL: a
    * screen with no state renders the route exactly as it comes, which is all a project without an
@@ -72,6 +79,47 @@ export type CanvasScreen = {
    * holds both the main path and its edge cases, so the choice is per screen and not per flow.
    */
   flowOnly?: boolean;
+  /**
+   * AN EXPLANATION FRAME: this node is a text panel in the user flows, not a picture of a screen.
+   *
+   * A flow does not end at this product's edge. The buyer pays on a hosted checkout this repo does not
+   * own, a step happens on a phone, a document arrives by email — and a flow that silently skips those
+   * beats reads as a product that skips a step. The owner, deciding it: *"the screen that it might show
+   * won't really be a screenshot, But it could be just an explanation of what will happen here on this
+   * step of the user flow."* This field is that explanation: what happens at this step, in the words a
+   * reviewer needs to follow the arrow through it.
+   *
+   * The rules it lives under, all enforced by the oracle:
+   * - FLOWS ONLY. It never appears in the grouped screens and never in an exploration.
+   * - NEVER CAPTURED. No route, no shot, no Open button, no claims — the capture skips it entirely.
+   * - NEVER A MIMIC. It draws as a dashed, tinted panel that cannot be mistaken for a product screen,
+   *   because a faithful-looking stand-in for a third party's page is banned ("Never draw a screen this
+   *   product does not own").
+   * - Edges into and out of it follow the normal edge-label rules. It is a real node on the path.
+   *
+   * `label` is its title (the step's name); this field is the body. Set `explain` and omit `route`.
+   */
+  explain?: string;
+  /**
+   * WHICH KIND OF NON-PHOTOGRAPHED STEP an explanation frame is. Three different truths were sharing
+   * one dark panel, and the owner stopped it: *"if you use the same approach for both, it will start
+   * to be confusing."* The kinds, each with its own chrome so a reader can tell them apart at a glance:
+   *
+   * - `"outside"` (the default): a third party's surface — Stripe's checkout, an OS print dialog.
+   *   Its design is not ours to draw or to change. Dashed neutral ring, "Outside this app".
+   * - `"product"`: part of THIS product's flow, but not capturable from this repo — a buyer page in
+   *   another repository, a transactional email, the mobile app. It WILL be designed some day; the
+   *   canvas just cannot photograph it from here. Dashed tinted ring, "In this product, not
+   *   capturable from here".
+   * - `"canvas:<slug>"`: a BOUNDARY NODE — the step continues in another canvas of this same
+   *   project (a flow that starts in a quote, ends in stock). Solid tinted ring, "Continues in the
+   *   … canvas", and a live "Open canvas" link when that canvas is served. This is how canvases
+   *   interconnect: the flow does not duplicate the other canvas's screens and does not pretend the
+   *   step is external — it names where the journey carries on.
+   *
+   * Only read when `explain` is set. An unknown value renders as `"outside"` rather than crashing.
+   */
+  explainKind?: string;
   /**
    * IN AN EXPLORATION: this frame SUPPORTS the direction with that id, and is drawn under it.
    *
@@ -120,6 +168,45 @@ export type CanvasScreen = {
    * text in it, and which beat the first-run frame is on is an attribute on the dialog.
    */
   expectSelector?: string;
+  /**
+   * Images on this screen never load because the APP ITSELF is broken there — and the canvas is
+   * documenting that bug rather than hiding it. The capture normally refuses a shot with an image that
+   * has no natural size, because a headless page that never scrolled photographs lazy screens with holes
+   * in them. This flag hands that guard over to the claims for this one screen: the shot is accepted with
+   * its broken images showing, because they ARE the finding. It is not a count, deliberately — how many
+   * broken images sit in the viewport moves with scroll and row heights, so an exact number flaps. The
+   * stale case is still caught: a flagged screen where every image loads fails, because the bug healed
+   * and this declaration — and whatever canvas note described it — is out of date.
+   */
+  brokenImages?: boolean;
+  /**
+   * This page is GENUINELY this empty. The capture calls a shot under its blank-page byte floor a failure,
+   * because a white screenshot usually means the page never arrived. A handful of real states are sparser
+   * than the floor — a public route waiting for its ticket is one grey line on white — and this flag says
+   * the near-blank picture IS the design. The claims still have to pass, so a page that truly failed to
+   * arrive still fails: it has no words in it either.
+   */
+  sparse?: boolean;
+  /**
+   * This surface NEVER SETTLES, by design or by content: a pulsing loading skeleton, a table row whose
+   * media plays. The capture normally demands two consecutive identical shots as proof the page is a
+   * settled design and not a page mid-load; on a perpetually moving surface that proof cannot exist, and
+   * five retries later the run fails a frame that was fine. This flag says a still frame is ONE INSTANT
+   * of a moving surface and accepts the single shot. The claims, the blank floor, and the image checks
+   * all still apply, so a page that truly failed to arrive still fails.
+   */
+  animated?: boolean;
+  /**
+   * PRESERVED HISTORY: this state no longer exists in the app, and the picture on file is the last true
+   * photograph of it. A payments page before its account connected, an agreement before it was accepted —
+   * once the world moved on, ANY recapture (--all, --only and --changed alike) would replace the last true
+   * picture with today's wrong page, and the old protection was a comment saying "never run --all", which
+   * is a rule only as strong as the next reader. Frozen is mechanical: the capture skips the screen in
+   * every mode (and says so), the oracle stops suggesting a recapture for it, and the live Open-destination
+   * check skips it, because a frozen frame's Open lands on today's page by definition. A frozen screen with
+   * no picture yet captures once, then freezes.
+   */
+  frozen?: boolean;
   /**
    * A field this frame is supposed to show FOCUSED, as a selector. Opt-in, and rare: the capture blurs every
    * document before the shutter, because an accidental focus ring is a lie about the resting design. A flow's
@@ -218,6 +305,19 @@ export type CanvasEdge = {
    * cannot be guessed from the frames themselves.
    */
   kind?: "step" | "branch";
+  /**
+   * WHERE ON THE SOURCE SCREEN THE MOVE STARTS: the control the person pressed, named by its exact visible
+   * text ("Mark as Shipped") or, prefixed `css=`, by a selector for a control with no text of its own.
+   *
+   * Declared here but MEASURED AT CAPTURE TIME: the capture resolves it on the live page into a rectangle
+   * and writes the rectangle into the manifest, and a spec that resolves to nothing or to more than one
+   * place FAILS THE CAPTURE the way a missed claim does — so a region can never quietly drift away from
+   * the control it points at. The flows view draws the measured regions behind a toggle that is OFF by
+   * default (several ringed regions per frame read as overload on a simple flow), numbered to pair each
+   * region with its edge. Only edges whose move is a press on something visible take one; conditions
+   * ("When the charge lands") have no origin, and edges out of explanation frames cannot take one.
+   */
+  origin?: string;
 };
 
 /** A journey, as a directed graph: the screens in it, and every move between them. */
@@ -366,6 +466,19 @@ export type CanvasDeclaration = {
    */
   kinds?: { id: string; whatBelongs: string }[];
   /**
+   * TEXT THAT MUST APPEAR ON NO CAPTURED FRAME OF THIS CANVAS — the tripwire for surfaces that cover pages.
+   *
+   * A real app resurrects its first-run and promo overlays in the capture browser, because their dismissals
+   * live in localStorage and localStorage is per origin: the capture origin has never dismissed anything, and
+   * every new campaign the app ships adds another overlay. Per-screen claims cannot catch them — the page's
+   * own text is still in the DOM under the overlay, so every claim passes while every picture is wrong. A
+   * canvas that lists the overlay's text here ("Welcome to…", a promo's "Don't show this again") fails EVERY
+   * polluted frame loudly at capture time, which turns a five-hour silent lie into a one-minute fix.
+   *
+   * Checked with the same reach as `expect`: the frame's own document and every same-origin frame inside it.
+   */
+  forbid?: string[];
+  /**
    * Optional third view. A declaration with none simply has two tabs, which is every canvas built before
    * this existed.
    */
@@ -469,11 +582,12 @@ export function allScreens(declaration: CanvasDeclaration): Array<{
   groupTitle: string;
   /**
    * WHICH VIEWS DRAW IT. A flow screen appears in both permanent views; a `groupedOnly` flow's screens appear
-   * only in the grouped one; an exploration direction appears only in the third. The oracle needs the difference
-   * to count frames per view, and it is served to it rather than inferred, because a count that is quietly wrong
-   * is how a canvas passes every check while missing half its frames.
+   * only in the grouped one; an exploration direction appears only in the third; an explanation frame appears
+   * only in the flows and is never captured. The oracle needs the difference to count frames per view, and it
+   * is served to it rather than inferred, because a count that is quietly wrong is how a canvas passes every
+   * check while missing half its frames.
    */
-  view: "flow" | "kinds" | "flowOnly" | "exploration";
+  view: "flow" | "kinds" | "flowOnly" | "exploration" | "explain";
 }> {
   return [
     ...declaration.flows.flatMap((flow) =>
@@ -482,12 +596,15 @@ export function allScreens(declaration: CanvasDeclaration): Array<{
         groupId: flow.id,
         groupTitle: flow.title,
         /* "flow" is drawn by BOTH permanent views, "kinds" only by the grouped one, "flowOnly" only by
-           the flows. See `groupedOnly` on the flow and `flowOnly` on the screen. */
-        view: (flow.groupedOnly
-          ? "kinds"
-          : screen.flowOnly
-            ? "flowOnly"
-            : "flow") as "flow" | "kinds" | "flowOnly",
+           the flows, and "explain" only by the flows with no capture behind it. See `groupedOnly` on the
+           flow, and `flowOnly` and `explain` on the screen. */
+        view: (screen.explain
+          ? "explain"
+          : flow.groupedOnly
+            ? "kinds"
+            : screen.flowOnly
+              ? "flowOnly"
+              : "flow") as "flow" | "kinds" | "flowOnly" | "explain",
       })),
     ),
     ...(declaration.explorations ?? []).flatMap((exploration) =>
@@ -530,6 +647,22 @@ export type CanvasShot = {
   tries: number;
   /** Content hash. A comment records the hash it was drawn on, so a recapture can flag it as stale. */
   hash: string;
+  /**
+   * WHERE EACH OUTGOING EDGE STARTS, measured on the live page at the moment of capture: one entry per
+   * declared `CanvasEdge.origin` on this screen, with the control's rectangle in picture pixels. The
+   * flows view draws these as the interaction-origin rings; the oracle holds them against the
+   * declaration. Absent when the screen declares no origins.
+   */
+  origins?: Array<{
+    /** The edge this region belongs to: its target screen id. */
+    to: string;
+    /** The declared spec, verbatim, so declaration and measurement can be matched one to one. */
+    origin: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }>;
 };
 
 export type CanvasShotManifest = {

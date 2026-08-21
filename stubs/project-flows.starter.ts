@@ -31,6 +31,17 @@
  *   `source`  is the one or two files the screen is built from — its route file, then the component that
  *             owns the surface. Once a frame is a picture, "where does this live" is a question the
  *             picture cannot answer. The oracle asserts every path still exists.
+ *   `explain` turns the node into an EXPLANATION FRAME: a text panel in the flows for a step outside this
+ *             app (a hosted checkout, another device, an email). `label` is the step's name, `explain` is
+ *             what happens there, and there is NO route, NO kind and NO claims — it is never captured and
+ *             never grouped. Example:
+ *               { id: "stripe-checkout", label: "Stripe Hosted Checkout",
+ *                 explain: "The buyer pays on Stripe's own page and the signed event comes back." },
+ *             `explainKind` says which kind of non-photographed step it is, and each draws its own
+ *             chrome: "outside" (default — a third party's surface), "product" (ours, in this flow,
+ *             but not capturable from this repo: another repository, an email, the mobile app), or
+ *             "canvas:<slug>" (a BOUNDARY NODE — the step continues in another canvas of this
+ *             project, drawn solid with an "Open canvas" link). See references/declaration.md.
  *   `edges`   is the flow. See below: this is the part that carries the meaning.
  *
  * TWO RULES THAT ARE NOT FIELDS, and both were learned from a designer reading a finished canvas:
@@ -125,6 +136,10 @@ export const CANVAS: CanvasDeclaration = {
         },
       ],
       edges: [
+        /* An action edge can add `origin: "Continue"` — the pressed control's exact visible text (or
+           `css=` plus a selector). The capture measures it into a rectangle; the flows view draws the
+           measured regions as numbered rings behind an Origins toggle that rests off. A spec resolving
+           to zero or several visible places fails the capture like a missed claim. */
         { from: "example-a", to: "example-b", label: "Presses Continue" },
       ],
     },

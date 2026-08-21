@@ -133,6 +133,9 @@ for (const file of [
   /* Retiring an exploration owes the reviewer a walk through every screen the winner landed on, and the ones
      that already existed are in `seen` already. This is the only thing that takes them back out of it. */
   "unsee.mjs",
+  /* A first delivery starts the reviewer at zero marks: on a first capture every screen is new, so marking any
+     is noise. Run once before handing over a new canvas; never again after. */
+  "adopt.mjs",
   /* The copy standard, imported by check-canvas.mjs. Without it the oracle cannot start. */
   "copy-rules.mjs",
   "dump-screens.mjs",
@@ -245,6 +248,8 @@ const IGNORE = [
   "design-canvas/comments.json",
   /* The rolling backups the route keeps of the file it is about to overwrite. */
   "design-canvas/comments.json.*",
+  /* The Playwright storage state the capture logs in with. Live session tokens — never committed. */
+  "design-canvas/auth-state.json",
 ];
 const gitignorePath = path.join(target, ".gitignore");
 const gitignore = existsSync(gitignorePath)

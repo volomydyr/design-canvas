@@ -504,6 +504,29 @@ grouping rather than dropping it.
 component-local state, so they need a pinned state or a review-only flag exactly as a dialog beat does. If
 a beat cannot be reached without one, that is work to schedule, not a reason to leave it off the canvas.
 
+**A STEP OUTSIDE THIS APP IS AN EXPLANATION FRAME, NEVER A GAP AND NEVER A MIMIC.** A flow that leaves the
+product — a hosted checkout, a step on another device, a document arriving by email — keeps the beat as a
+declared node with `explain` set and no `route`: the flows view draws it as a dashed text panel saying what
+happens there, it is never captured, it never appears in the grouped screens, and edges through it carry
+normal labels. The owner, deciding it: _"the screen that it might show won't really be a screenshot, But it
+could be just an explanation of what will happen here on this step of the user flow."_ It exists because
+the alternative on both sides is banned: skipping the beat reads as a product that skips a step, and a
+faithful-looking stand-in for a third party's page is a screen this product does not own.
+`references/declaration.md` has the entry and the rules the oracle enforces on it.
+
+**THREE KINDS OF NON-PHOTOGRAPHED STEP, THREE CHROMES** (`explainKind`, enforced by the oracle against the
+rendered panel). One dark panel was carrying three different truths, and the owner stopped it: _"if you use
+the same approach for both, it will start to be confusing."_ Declare which one it is:
+- `"outside"` (default) — a third party's surface (a hosted checkout, an OS dialog). Neutral dashed panel,
+  "Outside this app".
+- `"product"` — part of THIS product's flow, but not capturable from this repo: a buyer page in another
+  repository, a transactional email, the mobile app. Tinted dashed panel, "In this product, not capturable
+  from here". It tells the reviewer this step is ours and will be designed, the canvas just cannot reach it.
+- `"canvas:<slug>"` — a BOUNDARY NODE: the step continues in another canvas of this project (a flow born in
+  a quote, a tag press landing in stock). Solid tinted panel, "Continues in the … canvas", with a live
+  "Open canvas" link — this is how canvases interconnect instead of duplicating each other's screens.
+  Use it for real in-app crossings only; a step that leaves the product is `"outside"` or `"product"`.
+
 Then **audit reachability and delete what nothing reaches.** A canvas that includes an unreachable screen
 is lying about the product, and everything downstream treats the lie as real. Building one of these once
 found four unreachable levels and ~309 lines including three components. Propose the deletions, get them
@@ -549,6 +572,24 @@ must be chosen from the page rather than from the label, why an empty state need
 be proved without it, why no two screens may resolve to the same address and state, why labels use the
 product's words and never the tool's, why every `kind` needs at least two screens, and the edge-label rule (an action starting with a verb from a closed list, or a condition starting with
 "When", every label 12 to 24 characters, no `back` edges, enforced by the oracle).
+
+Three per-screen fields declare HONEST capture holds, for photographing a real app as it really is:
+`brokenImages: true` says images on this screen never load because the app itself is broken there — the
+broken image IS the finding, so the shot is accepted showing it (a flagged screen where every image loads
+still fails: the bug healed and the flag is stale); `sparse: true` says the page is genuinely under
+the blank-page byte floor — one grey line on white is a real state, and its claims still have to pass;
+and `animated: true` says the surface NEVER SETTLES by design (a pulsing loading skeleton, rows whose
+media plays) — the two-identical-shots stability proof is impossible there, so the single shot is
+accepted as one instant of a moving surface, with every other check still applied.
+
+An action edge can also declare WHERE its press lives: `origin: "Mark as Shipped"` (the control's exact
+visible text, or `css=` plus a selector) is measured by the capture into a rectangle in the manifest — a
+spec resolving to zero or several visible places fails like a missed claim, so the region can never drift.
+The flows view draws the measured regions as numbered rings behind an **Origins toggle that rests off**,
+pairs each ring with its edge's chip, couples them on hover, and re-anchors the edge to the ring; the
+oracle proves the toggle, the count and the pairing. Built for dense flows — a toolbar that opens fifteen
+dialogs — and left off everywhere the arrows already explain themselves. `references/declaration.md`
+carries the full rule.
 
 The flows are the part most likely to be got wrong. A user flow is a **branching diagram**, not a row:
 
@@ -612,6 +653,19 @@ The bulk of the work, and it is app-code work rather than canvas work.
 
 ### 5. Capture
 
+**A CAPTURE RUN IS NOT FINISHED WHEN ITS ASSERTIONS PASS. LOOK AT THE PICTURES.** Before anything about a
+run is reported, open every new or changed frame as an image and hold it against its label. The assertions
+prove text is in the DOM; only eyes catch an overlay covering the page, a blank band under a short page, or
+the wrong surface photographed — a promo dialog once sat over all thirty-one frames of a canvas while every
+assertion passed, and the owner found it, five hours late, by looking. The picture is the deliverable, so
+the picture is what gets verified. A run reported without this look is unverified, whatever the oracle says.
+
+**A REAL APP RESURRECTS ITS FIRST-RUN AND PROMO OVERLAYS IN THE CAPTURE BROWSER.** Their dismissals live in
+localStorage, localStorage is per origin, and the capture origin (its own port) has dismissed nothing — so
+dismiss them once ON THE CAPTURE ORIGIN and re-save the storage state, and declare each overlay's text in
+the canvas's `forbid` list so any return, including overlays the app ships later, fails every polluted
+frame loudly instead of being photographed.
+
 **ONE COMMAND, and it captures against a PRODUCTION BUILD.**
 
 ```bash
@@ -621,6 +675,24 @@ node design-canvas/capture-run.mjs --canvas <slug>
 That is the whole procedure. It builds into its own folder (`CANVAS_BUILD_DIR`, so the dev server's `.next` is
 untouched), serves it on its own port, dumps the declaration, captures, re-runs anything that flaked, stops the
 server, and prints what each phase cost.
+
+**AN APP BEHIND A LOGIN CAPTURES WITH A SAVED SESSION.** The capture browser is a fresh profile, so on an
+authenticated app every frame comes out as the sign-in page. The user — never the agent — logs in once:
+
+```bash
+npx playwright open --save-storage=design-canvas/auth-state.json <app url>
+```
+
+and every run after that names the file: `--storage-state design-canvas/auth-state.json` on `capture-run.mjs`
+or `capture.mjs`, or `CANVAS_STORAGE_STATE=<path>` set once for the project. The file holds live session
+tokens: the installer gitignores it, the agent never reads or prints its contents, and when the session
+expires the fix is the same one-time login again — frames full of sign-in pages are the symptom.
+
+**AN APP WITH VIDEO IN ITS CHROME CAPTURES ON REAL CHROME.** Playwright's bundled Chromium has no H.264
+codec, so every MP4 player photographs as a black "An unknown error occurred" box — a state no user is
+ever in. Pass `--browser-channel chrome` (or set `CANVAS_BROWSER_CHANNEL=chrome` once for the project)
+and the capture launches the installed Chrome instead. Found on gemhub-web, whose sidebar carries a
+promo video on every page.
 
 **WHY A BUILD.** `next dev` compiles each route on first request inside the capture's own load budget, and with
 several pages in flight the cost lands on a different screen every run — measured on the project this came from:
@@ -759,6 +831,15 @@ labels resolving to the same state is the most likely bug in the whole exercise 
 complete while it is wrong.
 
 ### 7. Hand it over, and say what is thin before being asked
+
+**A FIRST DELIVERY STARTS THE REVIEWER AT ZERO MARKS.** Before handing over a canvas's first build, run
+`node design-canvas/adopt.mjs --canvas <slug>`. The new-screens queue is meaningful only against a baseline —
+on a first capture every screen is new, so marking any is noise and marking all is the exploration-tab
+mistake in the permanent views. The owner's rule, verbatim: *"you start marking them only afterwards when you
+genuinely create a new screen/screens."* Agents also open the canvas page (every oracle run does), which
+seeds the baseline mid-build and leaves arbitrary marks at handover — adopt-at-delivery is what makes the
+queue mean what it says. From the second round on, never adopt: screens added to a delivered canvas are
+exactly what the queue exists to flag.
 
 Give the URL, the screen count, and then the honest list: states you could not reach, surfaces deliberately
 left off and why, anything animated that a still frame misrepresents, and **the scaffolding you added**, so

@@ -185,6 +185,9 @@ const CAPS = {
   note: { words: 20, sentences: 1 },
   fragment: { words: 14, sentences: 1 },
   long: { words: 25, sentences: 2 },
+  /* An explanation frame's body: a few sentences narrating a step outside the app. The one slot allowed a
+     paragraph, capped so it still fits the fixed panel it is drawn in (EXPLAIN_SIZE in graph-layout.ts). */
+  explain: { words: 45, sentences: 4 },
 };
 
 /** One string, held to the shape its slot allows. Returns a list of lines, each naming what to change. */
@@ -277,12 +280,22 @@ export function checkCanvasCopy({ title, note, groups, screens, kinds }) {
         where: `${screen.id} label`,
       }),
     );
-    problems.push(
-      ...checkCopyString(screen.note, {
-        kind: "note",
-        where: `${screen.id} note`,
-      }),
-    );
+    /* An explanation frame carries its whole body in `explain` — its panel draws no note, so
+       requiring one would demand copy nothing ever renders. Captured screens keep the requirement. */
+    if (!screen.explain)
+      problems.push(
+        ...checkCopyString(screen.note, {
+          kind: "note",
+          where: `${screen.id} note`,
+        }),
+      );
+    if (screen.explain)
+      problems.push(
+        ...checkCopyString(screen.explain, {
+          kind: "explain",
+          where: `${screen.id} explanation`,
+        }),
+      );
   }
   return problems;
 }

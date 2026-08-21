@@ -16,27 +16,32 @@
  * one debugging round in the project this came from.
  *
  * So the declaration is read from the FILE, every time, with no server involved at all. `flows.ts` is plain
- * data that imports nothing but a type, which is the property the declaration was given on purpose, and that
- * is what makes this a five-line transpile rather than a parser.
+ * data, and a multi-canvas project may split each canvas into its own file under `project/` — so this is a
+ * BUNDLE of the project folder rather than a one-file transpile: esbuild folds the relative imports back in,
+ * and the type-only import of the core erases with the types. The property that keeps this honest is
+ * unchanged — the declaration imports nothing that runs, so bundling it never executes app code.
  *
  * DELETE WITH: the design-canvas/ folder.
  */
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { transformSync } from "esbuild";
+import { buildSync } from "esbuild";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const source = path.join(HERE, "project", "flows.ts");
 
-/* Types are erased and the one `import type` goes with them, so nothing has to be resolved. */
-const js = transformSync(readFileSync(source, "utf8"), {
-  loader: "ts",
+/* Types are erased and type-only imports go with them; relative imports of per-canvas files bundle in. */
+const js = buildSync({
+  entryPoints: [source],
+  bundle: true,
   format: "esm",
   target: "node18",
-}).code;
+  platform: "neutral",
+  write: false,
+}).outputFiles[0].text;
 
 const dir = mkdtempSync(path.join(tmpdir(), "canvas-screens-"));
 const file = path.join(dir, "flows.mjs");
@@ -107,10 +112,13 @@ if (!declaration) {
  * app's path alias and this script must run with no build step.
  */
 const CANVAS_STATE_PARAM = "canvas";
+/* Null for an explanation frame (no route on purpose) — mirrors core/shots-route.ts exactly. */
 const screenUrl = (route, state) =>
-  state
-    ? `${route}${route.includes("?") ? "&" : "?"}${CANVAS_STATE_PARAM}=${encodeURIComponent(state)}`
-    : route;
+  !route
+    ? null
+    : state
+      ? `${route}${route.includes("?") ? "&" : "?"}${CANVAS_STATE_PARAM}=${encodeURIComponent(state)}`
+      : route;
 
 /* Both views. An exploration's directions are real routes and are captured exactly like a flow's screens; a
    dump that skipped them would leave the third tab drawing empty frames. */
@@ -157,8 +165,23 @@ const screens = groups.flatMap((group) =>
         ? screen.expectMissing
         : [screen.expectMissing]
       : undefined,
+    /* THE DECLARED INTERACTION ORIGINS of this screen's outgoing edges — mirrors core/shots-route.ts,
+       which serves the same list. Origins live on edges; the capture works per screen, so they are
+       gathered onto their source screen here or the production-build path never measures one. */
+    origins: (group.edges ?? [])
+      .filter((edge) => edge.from === screen.id && edge.origin)
+      .map((edge) => ({ to: edge.to, origin: edge.origin })),
   })),
 );
 process.stdout.write(
-  `${JSON.stringify({ viewport: declaration.viewport, screens }, null, 2)}\n`,
+  `${JSON.stringify(
+    {
+      viewport: declaration.viewport,
+      /* Canvas-wide forbidden text (overlay tripwire) — the capture checks it on every frame. */
+      forbid: declaration.forbid ?? [],
+      screens,
+    },
+    null,
+    2,
+  )}\n`,
 );

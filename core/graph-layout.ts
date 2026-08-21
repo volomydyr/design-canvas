@@ -110,6 +110,8 @@ export type LaidOutNode = {
   row: number;
   /** Exploration only: a frame drawn UNDER a direction rather than being one. See `CanvasScreen.under`. */
   supporting?: boolean;
+  /** Flows only: this node is an explanation panel, not a picture. See `CanvasScreen.explain`. */
+  explain?: boolean;
 };
 
 export type LaidOutEdge = CanvasEdge & {
@@ -126,6 +128,17 @@ export type LaidOutEdge = CanvasEdge & {
   my: number;
   /** True when it could not go straight across and had to travel round. */
   longWay: boolean;
+  /**
+   * The interaction-origin ring, IN WORLD COORDINATES, for an edge whose declared `origin` the capture
+   * measured: the manifest's picture-pixel rectangle mapped onto the frame's box. Only set when the
+   * measurement exists — a declared origin the capture has not measured yet draws nothing rather than
+   * guessing.
+   */
+  originBox?: Box;
+  /** 1-based number pairing the ring with its edge, counted per flow in declaration order. */
+  originIndex?: number;
+  /** The path re-anchored to start at the ring's border, drawn instead of `d` when the mode is on. */
+  dOrigin?: string;
 };
 
 export type LaidOutGroup = {
@@ -161,6 +174,10 @@ export function frameSize(
   declaration: CanvasDeclaration,
   captured?: (id: string) => { w: number; h: number } | undefined,
 ): { w: number; h: number } {
+  /* An explanation frame has no capture and no viewport: it is a text panel, and it takes the panel's own
+     fixed size rather than a screen's. Sizing it like a screen was the first bug this branch prevents — a
+     1152-wide card holding two sentences. */
+  if (screen.explain) return { ...EXPLAIN_SIZE };
   const shot = captured?.(screen.id);
   const view = shot ?? viewportFor(screen, declaration);
   return {
@@ -168,6 +185,13 @@ export function frameSize(
     h: Math.round(view.h * declaration.frameScale),
   };
 }
+
+/**
+ * The fixed size of an explanation panel, in world units. Sized to hold a step name and a few sentences at
+ * the canvas's own type scale, and deliberately narrower than any screen frame so a flow reads as screens
+ * with notes between them, never as screens of two kinds.
+ */
+export const EXPLAIN_SIZE = { w: 460, h: 280 };
 
 /**
  * HOW WIDE A PHONE FRAME'S CAPTION AND FOOT ARE ALLOWED TO BE, in world units.
@@ -199,10 +223,21 @@ export function chromeWidth(
     : frame;
 }
 
-/** How the layout is told what was captured. Absent for a project with nothing captured yet. */
+/** One interaction-origin rectangle as the capture measured it, in picture pixels. See `CanvasEdge.origin`. */
+export type CapturedOrigin = {
+  to: string;
+  origin: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+/** How the layout is told what was captured. Absent for a project with nothing captured yet. `origins`
+ *  rides along so the flow view can place the interaction-origin rings in world coordinates. */
 export type CapturedSizes = (
   id: string,
-) => { w: number; h: number } | undefined;
+) => { w: number; h: number; origins?: CapturedOrigin[] } | undefined;
 
 /* ------------------------------------------------------------------- ranking */
 
@@ -369,6 +404,7 @@ function placeNodes(
       h: size.h,
       rank: column,
       row: line,
+      ...(screen.explain ? { explain: true } : {}),
     };
   });
 }
@@ -401,8 +437,33 @@ function routeEdges(
   flow: CanvasFlow,
   nodes: LaidOutNode[],
   problems: string[],
+  captured?: CapturedSizes,
 ): { edges: LaidOutEdge[]; lanes: number; deepest: number } {
   const at = new Map(nodes.map((node) => [node.screen.id, node]));
+
+  /**
+   * The interaction-origin ring for one edge, in world coordinates: the capture measured the control in
+   * picture pixels, the frame is drawn at `node.w` world units for a `shot.w`-pixel picture, and one
+   * uniform scale maps between the two. Matched on target AND spec, so two edges leaving the same screen
+   * for the same target from different controls each find their own rectangle.
+   */
+  let originCounter = 0;
+  const originBoxOf = (edge: CanvasEdge): Box | undefined => {
+    if (!edge.origin) return undefined;
+    const node = at.get(edge.from);
+    const shot = captured?.(edge.from);
+    const measured = shot?.origins?.find(
+      (one) => one.to === edge.to && one.origin === edge.origin,
+    );
+    if (!node || !shot || !measured || shot.w <= 0) return undefined;
+    const scale = node.w / shot.w;
+    return {
+      x: node.x + measured.x * scale,
+      y: node.y + measured.y * scale,
+      w: measured.w * scale,
+      h: measured.h * scale,
+    };
+  };
   const bottom =
     nodes.length > 0 ? Math.max(...nodes.map((node) => node.y + node.h)) : 0;
 
@@ -439,6 +500,10 @@ function routeEdges(
 
     const straight = to.rank - from.rank === 1;
 
+    /* The ring and its number, when this edge declares an origin the capture measured. */
+    const originBox = originBoxOf(edge);
+    const originIndex = originBox ? (originCounter += 1) : undefined;
+
     if (straight) {
       const x1 = from.x + from.w;
       const y1 = from.y + from.h / 2 + offset;
@@ -447,6 +512,16 @@ function routeEdges(
       const reach = Math.max(120, (x2 - x1) * 0.5);
       const c1x = x1 + reach;
       const c2x = x2 - reach;
+      /* Re-anchored variant: out of the ring's right border, so the line itself points at the control.
+         It runs over the frame's own picture between ring and frame edge, which is exactly the point —
+         and exactly why the whole mode is a toggle that rests off. */
+      let dOrigin: string | undefined;
+      if (originBox) {
+        const ox = originBox.x + originBox.w;
+        const oy = originBox.y + originBox.h / 2;
+        const oReach = Math.max(120, (x2 - ox) * 0.5);
+        dOrigin = `M ${ox} ${oy} C ${ox + oReach} ${oy}, ${x2 - oReach} ${y2}, ${x2} ${y2}`;
+      }
       out.push({
         ...edge,
         x1,
@@ -456,6 +531,7 @@ function routeEdges(
         d: `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`,
         ...midpoint(x1, y1, c1x, y1, c2x, y2, x2, y2),
         longWay: false,
+        ...(originBox ? { originBox, originIndex, dOrigin } : {}),
       });
       continue;
     }
@@ -494,6 +570,17 @@ function routeEdges(
     const x2 = to.x + to.w / 2 + offset;
     const y2 = to.y + to.h;
     const bend = 90;
+    /* Re-anchored variant: the drop starts at the ring's bottom border instead of the frame's, then joins
+       the same lane and the same tail into the target. */
+    let dOrigin: string | undefined;
+    if (originBox) {
+      const ox = originBox.x + originBox.w / 2;
+      const oy = originBox.y + originBox.h;
+      dOrigin =
+        `M ${ox} ${oy} C ${ox} ${oy + bend}, ${ox} ${lane - bend}, ${ox + Math.sign(x2 - ox) * bend} ${lane} ` +
+        `L ${x2 - Math.sign(x2 - ox) * bend} ${lane} ` +
+        `C ${x2} ${lane}, ${x2} ${lane - bend}, ${x2} ${y2}`;
+    }
     out.push({
       ...edge,
       x1,
@@ -508,6 +595,7 @@ function routeEdges(
       mx: (x1 + x2) / 2,
       my: lane,
       longWay: true,
+      ...(originBox ? { originBox, originIndex, dOrigin } : {}),
     });
   }
   return { edges: out, lanes, deepest };
@@ -589,7 +677,7 @@ export function layoutFlows(
       originY,
       0,
     );
-    const routed = routeEdges(flow, nodes, problems);
+    const routed = routeEdges(flow, nodes, problems, captured);
     const edges = routed.edges;
     const box = boxOf(nodes, originY, routed.deepest, flow.title);
     groups.push({
@@ -625,6 +713,8 @@ export function layoutKinds(
     for (const screen of flow.screens) {
       /* An edge case belongs to its journey, not to a shelf of peers. See `flowOnly` in types.ts. */
       if (screen.flowOnly) continue;
+      /* An explanation panel narrates a step in a journey; there is nothing to compare it with. */
+      if (screen.explain) continue;
       const kind = screen.kind ?? "Other";
       byKind.set(kind, [...(byKind.get(kind) ?? []), { screen, flow }]);
     }

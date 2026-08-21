@@ -64,7 +64,8 @@ trusting the canvas. It is a tempting mistake, because the reason for doing it s
 surface drawn again beside the others so the four variants can be compared" — and it survives review right
 up until a designer reads it: _"I don't understand any of those screenshots. What are they supposed to show,
 do we really need all of them?"_ One frame, one tile. A state worth seeing gets its own pinned state; if it
-cannot have one, it does not need a tile. `check-canvas.mjs` fails on a collision.
+cannot have one, it does not need a tile. `check-canvas.mjs` fails on a collision. (An explanation frame is
+outside this rule the only honest way — by having no address at all. See the section below.)
 
 **Write labels and notes in the PRODUCT's words, never the tool's.** They are read by a designer, not by the
 agent that wrote them. A canvas shipped with four tiles saying "slot", which was the internal name for the
@@ -76,6 +77,42 @@ in the product itself.
 a frame with a heading on it. `check-canvas.mjs` fails on it. Do not sweep the leftovers into a bucket
 called "Other" either — that is a heading over things that have nothing to do with each other. The order of
 the groups is the declaration's order, so the kinds run in the same sequence as the journeys do.
+
+## A step the app cannot show: the explanation frame
+
+A journey does not end at this product's edge — a buyer pays on a hosted checkout this repo does not own, a
+step happens on a phone, a confirmation arrives by email. Skipping the beat draws a product that skips a
+step; drawing a stand-in for the third party's page is banned. The honest node is an EXPLANATION FRAME:
+
+```ts
+{ id: "stripe-checkout", label: "Stripe Hosted Checkout",
+  explain: "The buyer enters an address and card on Stripe's own page. Tax is calculated from the
+    address. Payment lands on the jeweler's account and Stripe sends the signed event back." },
+```
+
+The rules, every one enforced by `check-canvas.mjs`:
+
+- `explain` is the body, `label` is the step's name, and there is NO `route` — nothing to open, nothing to
+  photograph, so a route on one is a failure, not a convenience.
+- Flows only. No `kind` (it never appears in the grouped screens), never inside an exploration.
+- No `expect` and no `expectMissing`: nothing is captured, so nothing can be proved.
+- Edges into and out of it follow the normal edge-label rules below. It is a real node on the path.
+- The body is held to its own copy cap (about 45 words, up to four sentences) so it fits the fixed panel
+  the flows view draws it in.
+
+Three kinds of non-photographed step exist, and the panel chrome tells them apart (`explainKind`; the
+oracle fails a panel whose rendered kind differs from the declared one):
+
+```ts
+// A third party's surface — not ours to draw. Neutral dashed panel, "Outside this app". The default.
+{ id: "stripe-checkout", label: "Stripe Hosted Checkout", explain: "…" },
+// Ours, in this product's flow, but not capturable from this repo (another repository, an email, the
+// mobile app). Tinted dashed panel, "In this product, not capturable from here".
+{ id: "buyer-order-page", label: "Buyer Order Status Page", explain: "…", explainKind: "product" },
+// A BOUNDARY NODE: the step continues in another canvas of this project. Solid tinted panel,
+// "Continues in the Quotes canvas" + a live "Open canvas" link. In-app crossings only.
+{ id: "quote-complete", label: "Complete Order in Quotes", explain: "…", explainKind: "canvas:quotes" },
+```
 
 ## A direction that needs more than one picture
 
@@ -157,6 +194,20 @@ the owner's instruction, not a layout accident:
 
 > "user flows don't need titles about screens. they need interaction explanation over the arrows, making it
 > clear what has happened."
+
+**Where on the screen the move starts: `origin`.** An action edge can additionally say WHERE the press
+lives, by naming the control's exact visible text (`origin: "Mark as Shipped"`) or, prefixed `css=`, a
+selector for a control with no text of its own. The declaration only names it — the CAPTURE measures it:
+the spec is resolved on the live page into a rectangle written into the manifest, and a spec that resolves
+to nothing or to more than one visible place **fails the capture the way a missed claim does**, so a
+region can never quietly drift away from its control. On the flows view the measured regions appear
+behind an **Origins toggle that rests off** (several tinted rings per frame read as overload on a simple
+flow); switched on, each region is a numbered ring paired with its edge's label chip, hovering either
+lights both, and the edge is re-drawn out of the ring's border so the arrow itself points at the control.
+Origins belong on press edges whose control is visible in the picture — a condition edge (`When …`) has
+no origin, and an explanation frame cannot own one. The oracle verifies every declared origin was
+measured, every measurement is still declared, and one press of the toggle draws exactly one ring per
+measurement.
 
 ## Explorations, while a question is open
 

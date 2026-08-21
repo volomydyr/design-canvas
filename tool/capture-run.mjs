@@ -60,6 +60,19 @@ const rounds = Number(argOf("retries") ?? 2);
  */
 const buildCmd = argOf("build-cmd") ?? "npx next build";
 const serveCmd = argOf("serve-cmd") ?? "npx next start --port {port}";
+/**
+ * The Playwright storage state the capture logs in with, for an app behind a login. Forwarded verbatim to
+ * capture.mjs, which documents how the file is made and refuses a path that does not exist. Also honoured
+ * from `CANVAS_STORAGE_STATE`, which is how a project sets it once instead of on every run.
+ */
+const storageState = argOf("storage-state") ?? process.env.CANVAS_STORAGE_STATE;
+/**
+ * The browser channel the capture photographs with. Forwarded verbatim to capture.mjs, which documents
+ * why a real app with video needs the installed Chrome (`chrome`) instead of the codec-less bundled
+ * Chromium. Also honoured from `CANVAS_BROWSER_CHANNEL`, set once per project.
+ */
+const browserChannel =
+  argOf("browser-channel") ?? process.env.CANVAS_BROWSER_CHANNEL;
 
 /** Split a command line into what `spawn` wants. Quoted arguments are kept whole. */
 function parts(line) {
@@ -187,6 +200,8 @@ const captureArgs = (only) => [
   screensFile,
   /* Nothing to warm: a build has already compiled every route. */
   "--no-warm",
+  ...(storageState ? ["--storage-state", storageState] : []),
+  ...(browserChannel ? ["--browser-channel", browserChannel] : []),
   ...(only ? ["--only", only.join(",")] : has("all") ? ["--all"] : []),
 ];
 

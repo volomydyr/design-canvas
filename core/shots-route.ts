@@ -41,8 +41,17 @@ export const dynamic = "force-dynamic";
 
 const SHOTS = path.join(process.cwd(), "design-canvas", "shots");
 
-/** The address a screen is captured at: its route, plus the state flag when it pins one. */
-export function screenUrl(route: string, state?: string): string {
+/**
+ * The address a screen is captured at: its route, plus the state flag when it pins one.
+ *
+ * NULL FOR AN EXPLANATION FRAME, which has no route on purpose — a missing route once composed into
+ * `http://localhost:3055undefined`, so absence is explicit here rather than discovered downstream.
+ */
+export function screenUrl(
+  route: string | undefined,
+  state?: string,
+): string | null {
+  if (!route) return null;
   if (!state) return route;
   const separator = route.includes("?") ? "&" : "?";
   return `${route}${separator}${CANVAS_STATE_PARAM}=${encodeURIComponent(state)}`;
@@ -144,6 +153,8 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
           viewport: declaration.viewport,
           /* The declared sections travel with the screens, because the oracle checks one against the other. */
           kinds: declaration.kinds ?? null,
+          /* Canvas-wide forbidden text (overlay tripwire) — served, or the capture never hears of it. */
+          forbid: declaration.forbid ?? [],
           /* Both views: an exploration's directions are captured exactly like a flow's screens, or the
              comparison the whole tab exists for has nothing in its frames. */
           screens: allScreens(declaration).map(({ screen, view }) => ({
@@ -154,7 +165,12 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             kind: screen.kind ?? null,
             /* The line under the frame. Served for the copy checker; nothing else downstream reads it. */
             note: screen.note,
+            /* Null on an explanation frame: nothing to visit, nothing to capture. */
             url: screenUrl(screen.route, screen.state),
+            explain: screen.explain ?? null,
+            /* Which kind of non-photographed step: "outside" | "product" | "canvas:<slug>". Served so
+               the oracle can hold the rendered chrome against the declaration. */
+            explainKind: screen.explain ? (screen.explainKind ?? "outside") : null,
             expect: screen.expect
               ? Array.isArray(screen.expect)
                 ? screen.expect
@@ -166,6 +182,14 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
                 : [screen.expectMissing]
               : [],
             expectSelector: screen.expectSelector ?? null,
+            /* The declared honest holds. Served, or the capture and the oracle never hear a screen said
+               its broken images are the finding, or that its near-blank page is the design. */
+            brokenImages: screen.brokenImages ?? false,
+            sparse: screen.sparse ?? false,
+            /* The perpetual-motion hold: a still frame accepted as one instant of a moving surface. */
+            animated: screen.animated ?? false,
+            /* Preserved history — the capture skips it in every mode and the live checks leave it alone. */
+            frozen: screen.frozen ?? false,
             /**
              * A SCREEN'S OWN VIEWPORT, which this projection used to drop.
              *
@@ -190,6 +214,14 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             twin: screen.twin ?? null,
             /* Served so the oracle can assert every one of them still exists on disk. */
             source: screen.source ?? [],
+            /* THE DECLARED INTERACTION ORIGINS of this screen's outgoing edges. The capture reads its
+               screens from here, so an origin not served is an origin never measured — the same trap
+               `viewport` and `device` each fell into once. See `CanvasEdge.origin`. */
+            origins: declaration.flows.flatMap((flow) =>
+              flow.edges
+                .filter((edge) => edge.from === screen.id && edge.origin)
+                .map((edge) => ({ to: edge.to, origin: edge.origin! })),
+            ),
           })),
         });
       }
