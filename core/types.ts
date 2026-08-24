@@ -331,6 +331,15 @@ export type CanvasEdge = {
    * ("When the charge lands") have no origin, and edges out of explanation frames cannot take one.
    */
   origin?: string;
+  /**
+   * WHY A PRESS EDGE HAS NO ORIGIN, when it genuinely cannot have one. The oracle requires every
+   * action edge to carry `origin` OR this field — grey press edges became deliberate after the owner
+   * found the orange coverage looking arbitrary ("looks like you simply dont [decide] and you just
+   * did it randomly"). The honest reasons: the control lives behind a closed menu, the picture shows
+   * the same text twice, the edge leaves an explanation card with no picture, or the source frame is
+   * frozen history the capture never re-measures. One short sentence naming which.
+   */
+  noOrigin?: string;
 };
 
 /** A journey, as a directed graph: the screens in it, and every move between them. */

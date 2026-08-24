@@ -1332,11 +1332,29 @@ async function captureOne(screen, secondPass = false) {
         });
         continue;
       }
+      /**
+       * THE RECTANGLE MUST BE IN THE PICTURE. A control can resolve uniquely and still sit outside
+       * what was photographed — below the fold of an inner-scroll column the composite did not
+       * extend to, or off the viewport's edge — and a highlight drawn from that rectangle floats in
+       * empty stage next to its frame, which the owner called the one thing that must ESPECIALLY
+       * never happen. A few pixels of overhang is row-at-the-crop-line rounding and is clamped in;
+       * more than that is a control the picture does not show, and it fails like a missed claim.
+       */
+      const SLACK = 8;
+      const overX = Math.max(0, -found.x) + Math.max(0, found.x + found.w - shotViewport.w);
+      const overY = Math.max(0, -found.y) + Math.max(0, found.y + found.h - shotH);
+      if (overX > SLACK || overY > SLACK) {
+        claims.push({
+          claim: `origin "${wanted_origin.origin}" (edge to ${wanted_origin.to}) sits inside the captured picture — it measured at ${found.x},${found.y} ${found.w}x${found.h} on a ${shotViewport.w}x${shotH} shot`,
+          met: false,
+        });
+        continue;
+      }
       origins.push({
         to: wanted_origin.to,
         origin: wanted_origin.origin,
-        x: found.x,
-        y: found.y,
+        x: Math.min(Math.max(found.x, 0), shotViewport.w - found.w),
+        y: Math.min(Math.max(found.y, 0), shotH - found.h),
         w: found.w,
         h: found.h,
       });

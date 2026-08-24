@@ -70,10 +70,10 @@ import {
   IconDesktop,
   IconLeft,
   IconMinus,
+  IconCursorClick,
   IconPhone,
   IconPlus,
   IconRight,
-  IconTarget,
   IconTrash,
 } from "./icons";
 import {
@@ -2150,6 +2150,33 @@ export function CanvasView({
           </button>
         ))}
 
+        {/**
+         * THE PRESS-HIGHLIGHTS TOGGLE, immediately right of the User Flows tab and only while that tab
+         * is on — the owner placed it: it is an action OF that view, so it appears with it. A cursor
+         * mid-click (his pick), orange when on so the control and the highlights it draws speak the
+         * same accent. Only when a measured origin exists: a control that could never draw anything is
+         * a control that does nothing. Rests off.
+         */}
+        {hasOrigins ? (
+          <button
+            type="button"
+            aria-pressed={showOrigins}
+            aria-label="Show press highlights"
+            title="Show where each press happens"
+            onClick={() => setShowOrigins((was) => !was)}
+            className={cn(
+              BAR_ITEM,
+              BAR_SQUARE,
+              showOrigins
+                ? "bg-[hsl(28_95%_55%/0.18)] text-[hsl(28_95%_60%)]"
+                : BAR_QUIET,
+            )}
+            data-canvas-origins-toggle=""
+          >
+            <IconCursorClick />
+          </button>
+        ) : null}
+
 
 
         {/**
@@ -2402,33 +2429,6 @@ export function CanvasView({
         data-canvas-chrome=""
         data-canvas-zoombar=""
       >
-        {/**
-         * THE PRESS-ORIGINS TOGGLE, an instrument beside the zoom rather than a word in the toolbar.
-         * The toolbar is the row of one-off view choices; this is a display layer you switch on and
-         * off, which is the zoom bar's kind of control — the owner rejected the labelled toolbar pill
-         * as neither clear nor typical. Flows view only, and only when a measured origin exists: a
-         * control that could never draw anything is a control that does nothing. Rests off.
-         */}
-        {hasOrigins ? (
-          <>
-            <button
-              type="button"
-              aria-pressed={showOrigins}
-              aria-label="Show press origins"
-              title="Show where each press happens"
-              onClick={() => setShowOrigins((was) => !was)}
-              className={cn(
-                BAR_ITEM,
-                BAR_SQUARE,
-                showOrigins ? BAR_TAB_ON : BAR_QUIET,
-              )}
-              data-canvas-origins-toggle=""
-            >
-              <IconTarget />
-            </button>
-            <span className="mx-1 h-5 w-px bg-white/[0.14]" />
-          </>
-        ) : null}
         <button
           type="button"
           aria-label="Zoom out"

@@ -224,10 +224,15 @@ overload on a simple flow); switched on, each region is a vivid orange highlight
 out of the highlight's border in the same orange — one line from the pressed control to the screen it
 opens, which is the whole pairing. No numbers and no hover effects, both retired on the owner's feedback.
 Orange because blue (review queue), green (answered pins) and red (failures) already mean other things.
-Origins belong on press edges whose control is visible in the picture — a condition edge (`When …`) has
-no origin, and an explanation frame cannot own one. The oracle verifies every declared origin was
-measured, every measurement is still declared, and one press of the toggle draws exactly one highlight
-per measurement.
+**Every press edge declares its origin, or declares why it cannot — the oracle refuses neither.** The
+first pass hand-picked a subset and the result read as random. Now an action edge carries `origin` or
+`noOrigin: "<one short reason>"`; the honest reasons are a control behind a closed menu, the same text
+twice in one picture, an edge leaving an explanation card, or a frozen source frame the capture never
+re-measures. A condition edge (`When …`) carries neither — nothing was pressed. The capture also refuses
+a rectangle the picture does not hold (a control below the pictured fold or off its edge), because a
+highlight floating outside its frame must especially never happen. The oracle verifies every declared
+origin was measured, every measurement is still declared, and one press of the toggle draws exactly one
+highlight per measurement.
 
 ## Explorations, while a question is open
 

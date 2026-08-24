@@ -158,6 +158,10 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
               from: edge.from,
               to: edge.to,
               label: edge.label ?? null,
+              /* Both halves of the origin-completeness rule travel to the oracle: which press edges
+                 declared where their press lives, and which declared why they cannot. */
+              origin: edge.origin ?? null,
+              noOrigin: edge.noOrigin ?? null,
             })),
           })),
           viewport: declaration.viewport,

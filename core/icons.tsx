@@ -45,12 +45,17 @@ function Svg({
   );
 }
 
-/** The press-origins toggle: a target, because it marks where on a frame the press lands. */
-export function IconTarget(props: IconProps) {
+/** The press-highlights toggle: a cursor mid-click, because it marks where on a frame the press lands.
+ *  The owner picked it over a target, a fingertip and focus corners — the most literal and most typical
+ *  glyph for a click. */
+export function IconCursorClick(props: IconProps) {
   return (
     <Svg {...props}>
-      <circle cx="12" cy="12" r="8" />
-      <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+      <path d="M9.04 9.69a.5.5 0 0 1 .65-.65l11 4.5a.5.5 0 0 1-.07.95l-4.35 1.04a1 1 0 0 0-.74.74l-1.04 4.35a.5.5 0 0 1-.95.07z" />
+      <path d="M13.8 4.1 12.4 6" />
+      <path d="m5.1 8-2.7-.7" />
+      <path d="m6.4 12.5-1.9 1.9" />
+      <path d="M7.4 2.4l.7 2.7" />
     </Svg>
   );
 }

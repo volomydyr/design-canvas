@@ -361,6 +361,30 @@ for (const group of groups ?? []) {
     failures.push(
       `flow "${group.id}" has no action edge — a chain of states is grouped screens, not a user flow`,
     );
+  /**
+   * EVERY PRESS EDGE SAYS WHERE ITS PRESS LIVES, OR WHY IT CANNOT. The first origins pass hand-picked
+   * a subset and the owner read the result as random — 16 orange edges among 62 presses, with nothing
+   * marking the other 46 as decisions. So the choice is now explicit and enforced: an action edge
+   * carries `origin` or `noOrigin`, never neither and never both, and a condition edge ("When …")
+   * carries no origin at all — nothing was pressed, so there is nothing to highlight.
+   */
+  for (const edge of group.edges) {
+    const first = (edge.label ?? "").split(" ")[0];
+    const isAction = first !== "When" && VERBS.includes(first);
+    const where = `${group.id}: edge ${edge.from} → ${edge.to}`;
+    if (isAction && !edge.origin && !edge.noOrigin)
+      failures.push(
+        `${where} ("${edge.label}") is a press with no origin and no stated reason — declare where the press lives, or why the picture cannot show it`,
+      );
+    if (isAction && edge.origin && edge.noOrigin)
+      failures.push(
+        `${where} declares both origin and noOrigin — it cannot both have a place and lack one`,
+      );
+    if (!isAction && edge.origin)
+      failures.push(
+        `${where} ("${edge.label}") is a condition with an origin — nothing was pressed, so nothing can be highlighted`,
+      );
+  }
 }
 
 /**

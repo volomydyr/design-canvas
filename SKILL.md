@@ -588,12 +588,14 @@ An action edge can also declare WHERE its press lives: `origin: "Mark as Shipped
 visible text, or `css=` plus a selector) is measured by the capture into a rectangle in the manifest — a
 spec resolving to zero or several visible places fails like a missed claim, so the region can never drift.
 The flows view draws the measured regions as vivid ORANGE highlights (orange because blue, green and red
-already carry other meanings) behind a press-origins toggle in the zoom bar that RESTS OFF; with it on,
-each edge re-anchors to start AT its highlight, so one orange line connects the pressed control to the
-screen it opens — that connection is the whole pairing: no numbers, no hover choreography (both retired
-on the owner's feedback as overcomplication). The oracle proves the toggle, the count and the anchoring.
-Built for dense flows — a toolbar that opens fifteen dialogs — and left off everywhere the arrows already
-explain themselves. `references/declaration.md` carries the full rule.
+already carry other meanings) behind a cursor-click toggle that sits right of the User Flows tab, appears
+only while that tab is on, glows orange when pressed, and RESTS OFF; with it on, each edge re-anchors to
+start AT its highlight, so one orange line connects the pressed control to the screen it opens — that
+connection is the whole pairing: no numbers, no hover choreography (both retired on the owner's feedback
+as overcomplication). EVERY action edge carries `origin` or `noOrigin: "<reason>"` — the oracle refuses
+neither and refuses an origin on a condition edge — so orange is the norm for presses and every grey
+press is a written decision. The capture refuses a rectangle the picture does not hold, so a highlight
+can never float outside its frame. `references/declaration.md` carries the full rule.
 
 A USER FLOW IS CONNECTED BY ACTIONS. "If the user does this, they see this" — that is the definition, in
 the owner's words, and a "flow" that is a linear chain of states joined only by "When …" conditions is a

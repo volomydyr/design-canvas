@@ -137,6 +137,10 @@ export type LaidOutEdge = CanvasEdge & {
   originBox?: Box;
   /** The path re-anchored to start at the ring's border, drawn instead of `d` when the mode is on. */
   dOrigin?: string;
+  /** Where the label goes while the highlights mode is ON: computed on the re-anchored path, because a
+   *  pill left at the ordinary path's midpoint visibly detaches from the orange line it belongs to. */
+  mxOrigin?: number;
+  myOrigin?: number;
 };
 
 export type LaidOutGroup = {
@@ -463,13 +467,32 @@ function routeEdges(
       (one) => one.to === edge.to && one.origin === edge.origin,
     );
     if (!node || !shot || !measured || shot.w <= 0) return undefined;
+    /**
+     * NEVER OUTSIDE THE FRAME. The capture already refuses rectangles the picture does not hold, but
+     * an older manifest can still carry one, and a highlight floating in empty stage beside its frame
+     * is the failure the owner said must especially never happen. So the drawn box is clamped into
+     * the frame, and one that would not even intersect it draws nothing at all — the edge then keeps
+     * its ordinary anchor instead of pointing at a ghost.
+     */
     const scale = node.w / shot.w;
-    return {
+    const box = {
       x: node.x + measured.x * scale,
       y: node.y + measured.y * scale,
       w: measured.w * scale,
       h: measured.h * scale,
     };
+    if (
+      box.x >= node.x + node.w ||
+      box.y >= node.y + node.h ||
+      box.x + box.w <= node.x ||
+      box.y + box.h <= node.y
+    )
+      return undefined;
+    box.x = Math.max(box.x, node.x);
+    box.y = Math.max(box.y, node.y);
+    box.w = Math.min(box.w, node.x + node.w - box.x);
+    box.h = Math.min(box.h, node.y + node.h - box.y);
+    return box;
   };
   const bottom =
     nodes.length > 0 ? Math.max(...nodes.map((node) => node.y + node.h)) : 0;
@@ -484,6 +507,57 @@ function routeEdges(
   }
 
   const out: LaidOutEdge[] = [];
+  /* One candidate list per edge, in `out` order: every spot a label may sit, ALL of them on the edge's
+     own path. First entry is the preferred midpoint; the rest walk outward either side of it. */
+  const labelTracks: Array<{
+    main: Array<[number, number]>;
+    origin?: Array<[number, number]>;
+  }> = [];
+  const cubicAt = (
+    t: number,
+    x1: number,
+    y1: number,
+    c1x: number,
+    c1y: number,
+    c2x: number,
+    c2y: number,
+    x2: number,
+    y2: number,
+  ): [number, number] => {
+    const u = 1 - t;
+    return [
+      u * u * u * x1 + 3 * u * u * t * c1x + 3 * u * t * t * c2x + t * t * t * x2,
+      u * u * u * y1 + 3 * u * u * t * c1y + 3 * u * t * t * c2y + t * t * t * y2,
+    ];
+  };
+  const cubicTrack = (
+    x1: number,
+    y1: number,
+    c1x: number,
+    c1y: number,
+    c2x: number,
+    c2y: number,
+    x2: number,
+    y2: number,
+  ): Array<[number, number]> =>
+    [0.5, 0.42, 0.58, 0.34, 0.66, 0.26, 0.74, 0.18, 0.82].map((t) =>
+      cubicAt(t, x1, y1, c1x, c1y, c2x, c2y, x2, y2),
+    );
+  const laneTrack = (
+    fromX: number,
+    toX: number,
+    laneY: number,
+    bendSize: number,
+  ): Array<[number, number]> => {
+    const lo = Math.min(fromX, toX) + bendSize + 60;
+    const hi = Math.max(fromX, toX) - bendSize - 60;
+    const mid = (fromX + toX) / 2;
+    const steps = [0, 260, -260, 520, -520, 780, -780, 1040, -1040];
+    return steps
+      .map((step) => Math.min(Math.max(mid + step, lo), hi))
+      .filter((x, index, all) => all.indexOf(x) === index)
+      .map((x) => [x, laneY] as [number, number]);
+  };
   let lanes = 0;
   /* How far the deepest bypass reaches, so the group's box ends under it rather than under a guess. */
   let deepest = 0;
@@ -528,7 +602,7 @@ function routeEdges(
         const oReach = Math.max(120, (x2 - ox) * 0.5);
         dOrigin = `M ${ox} ${oy} C ${ox + oReach} ${oy}, ${x2 - oReach} ${y2}, ${x2} ${y2}`;
       }
-      out.push({
+      const pushed: LaidOutEdge = {
         ...edge,
         x1,
         y1,
@@ -538,6 +612,22 @@ function routeEdges(
         ...midpoint(x1, y1, c1x, y1, c2x, y2, x2, y2),
         longWay: false,
         ...(originBox ? { originBox, dOrigin } : {}),
+      };
+      out.push(pushed);
+      labelTracks.push({
+        main: cubicTrack(x1, y1, c1x, y1, c2x, y2, x2, y2),
+        origin: originBox
+          ? cubicTrack(
+              originBox.x + originBox.w,
+              originBox.y + originBox.h / 2,
+              originBox.x + originBox.w + Math.max(120, (x2 - originBox.x - originBox.w) * 0.5),
+              originBox.y + originBox.h / 2,
+              x2 - Math.max(120, (x2 - originBox.x - originBox.w) * 0.5),
+              y2,
+              x2,
+              y2,
+            )
+          : undefined,
       });
       continue;
     }
@@ -603,7 +693,78 @@ function routeEdges(
       longWay: true,
       ...(originBox ? { originBox, dOrigin } : {}),
     });
+    labelTracks.push({
+      main: laneTrack(x1, x2, lane, bend),
+      origin: originBox
+        ? laneTrack(originBox.x + originBox.w / 2, x2, lane, bend)
+        : undefined,
+    });
   }
+  /**
+   * NO TWO LABEL PILLS MAY OVERLAP — AND A PILL NEVER LEAVES ITS OWN LINE. The first fix nudged a
+   * colliding label straight down, which detached it from the curve it names ("badges dont seem to
+   * follow lines correctly" — the owner, immediately). So a label now dodges by SLIDING ALONG ITS OWN
+   * PATH: a straight edge samples its cubic at points either side of the middle, a bypass slides along
+   * its lane, and the first clear spot wins. Resolved twice, because the highlights mode re-anchors
+   * some paths: once for the resting canvas (mx, my) and once for the mode (mxOrigin, myOrigin), each
+   * pass seeing every label so the two states are both collision-free. Sizes are estimated — this runs
+   * before anything is drawn, so there is no DOM to measure.
+   */
+  const LABEL_CHAR_W = 15;
+  const LABEL_H = 46;
+  const resolve = (
+    positionOf: (index: number) => Array<[number, number]>,
+    write: (edge: LaidOutEdge, x: number, y: number) => void,
+  ) => {
+    const placed: Box[] = [];
+    out.forEach((edge, index) => {
+      if (!edge.label) return;
+      const w = edge.label.length * LABEL_CHAR_W + 28;
+      const rectAt = (x: number, y: number): Box => ({
+        x: x - w / 2,
+        y: y - LABEL_H / 2,
+        w,
+        h: LABEL_H,
+      });
+      const collides = (rect: Box) =>
+        placed.some(
+          (other) =>
+            rect.x < other.x + other.w &&
+            rect.x + rect.w > other.x &&
+            rect.y < other.y + other.h &&
+            rect.y + rect.h > other.y,
+        );
+      const candidates = positionOf(index);
+      let pick = candidates[0];
+      for (const candidate of candidates) {
+        if (!collides(rectAt(candidate[0], candidate[1]))) {
+          pick = candidate;
+          break;
+        }
+      }
+      write(edge, pick[0], pick[1]);
+      placed.push(rectAt(pick[0], pick[1]));
+    });
+  };
+  resolve(
+    (index) => labelTracks[index]?.main ?? [[out[index].mx, out[index].my]],
+    (edge, x, y) => {
+      edge.mx = x;
+      edge.my = y;
+    },
+  );
+  resolve(
+    (index) => {
+      const track = labelTracks[index];
+      if (!track) return [[out[index].mx, out[index].my]];
+      return track.origin ?? track.main;
+    },
+    (edge, x, y) => {
+      edge.mxOrigin = x;
+      edge.myOrigin = y;
+    },
+  );
+
   return { edges: out, lanes, deepest };
 }
 

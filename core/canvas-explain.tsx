@@ -43,10 +43,11 @@ import type { CanvasScreen } from "./types";
 const TITLE_SIZE = 28;
 const BODY_SIZE = 23;
 
-/** The neutral dashed ring: same weight family as `FRAME_EDGE`, drawn as a border because a shadow cannot dash. */
+/** The neutral dashed ring: same weight family as `FRAME_EDGE`, drawn as a border because a shadow cannot dash.
+ *  BOTH dashed kinds wear it — the "product" kind was tinted teal once and the owner retired that: "why are
+ *  these different color? keeping the border and hint grey in both is totally fine." The hint TEXT carries
+ *  the distinction; the chrome does not need to. */
 const EDGE_OUTSIDE = "hsl(0 0% 100% / 0.28)";
-/** The in-product tint: the canvas accent family, still dashed — ours, but still not a picture. */
-const EDGE_PRODUCT = "hsl(187 65% 55% / 0.55)";
 
 /** "canvas:orders" → "orders"; anything else → null. Unknown values fall back to the outside chrome. */
 function boundarySlug(kind: string | undefined): string | null {
@@ -102,14 +103,16 @@ export function CanvasExplain({ screen }: { screen: CanvasScreen }) {
          * first version of this link LOOKED clickable and did nothing. A missing target 404s until
          * the other canvas exists.
          */}
+        {/* Hover lightens the pill — a button with no hover does not read as pressable, and this one
+            shipped without it once (the owner caught it). Background lives in the classes so :hover
+            can win; inline style cannot express it. */}
         <a
           href={`/design-canvas/${slug}`}
           title={`The ${slugTitle(slug)} canvas`}
           data-canvas-chrome=""
-          className="mt-auto flex items-center justify-center self-start rounded-full font-semibold text-white"
+          className="mt-auto flex items-center justify-center self-start rounded-full bg-[hsl(200_15%_12%)] font-semibold text-white transition-colors hover:bg-[hsl(200_13%_26%)]"
           style={{
             fontSize: BODY_SIZE,
-            background: "hsl(200 15% 12%)",
             padding: "14px 34px",
           }}
         >
@@ -127,8 +130,8 @@ export function CanvasExplain({ screen }: { screen: CanvasScreen }) {
       style={{
         width: EXPLAIN_SIZE.w,
         height: EXPLAIN_SIZE.h,
-        border: `2px dashed ${inProduct ? EDGE_PRODUCT : EDGE_OUTSIDE}`,
-        background: inProduct ? "hsl(190 18% 15%)" : "hsl(192 12% 17%)",
+        border: `2px dashed ${EDGE_OUTSIDE}`,
+        background: "hsl(192 12% 17%)",
       }}
     >
       <figcaption
@@ -147,7 +150,7 @@ export function CanvasExplain({ screen }: { screen: CanvasScreen }) {
         className="mt-auto"
         style={{
           fontSize: BODY_SIZE - 4,
-          color: inProduct ? "hsl(187 45% 60% / 0.75)" : "hsl(0 0% 100% / 0.35)",
+          color: "hsl(0 0% 100% / 0.35)",
         }}
       >
         {inProduct ? "In this product, not capturable from here" : "Outside this app"}

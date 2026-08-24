@@ -136,8 +136,10 @@ export function CanvasEdgeLayer({
                */
               className="pointer-events-none absolute whitespace-nowrap rounded-full border border-white/[0.14] bg-[hsl(192_12%_13%)] font-medium text-white"
               style={{
-                left: edge.mx,
-                top: edge.my,
+                /* The mode's own label positions: a re-anchored path moves, and a pill left at the
+                   resting midpoint visibly detaches from the orange line it names. */
+                left: showOrigins ? (edge.mxOrigin ?? edge.mx) : edge.mx,
+                top: showOrigins ? (edge.myOrigin ?? edge.my) : edge.my,
                 /* World-sized, like every other piece of text on the canvas: it scales with the surface and
                    never moves. Only the centring transform is left. */
                 fontSize: LABEL_SIZE,
