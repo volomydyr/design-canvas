@@ -376,8 +376,13 @@ export function CanvasFrame({
 
   const w = Math.round((shot?.w ?? 1440) * scale);
   const h = Math.round((shot?.h ?? 900) * scale);
+  /* A declared-animated surface records `stable: false` HONESTLY — one instant of a page that never
+     settles is its accepted picture, not a failure. The capture and the oracle both learned that hold;
+     this pill lagged behind and stamped the two animated frames "not what it claims" in front of the
+     reviewer. The red pill is for real failures only, and a real failure never survives to a review. */
   const failed =
-    (shot?.claims ?? []).some((claim) => !claim.met) || shot?.stable === false;
+    (shot?.claims ?? []).some((claim) => !claim.met) ||
+    (shot?.stable === false && !screen.animated);
   const missing = (shot?.claims ?? [])
     .filter((claim) => !claim.met)
     .map((claim) => claim.claim);
