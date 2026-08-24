@@ -132,6 +132,28 @@ from the old rule: the incumbent is a REFERENCE, not a sixth direction. It reuse
 still fails rule 1. `check-canvas.mjs` fails an exploration without an `original`, or with one the flows do
 not declare.
 
+### The diagnosis step — run it before composing any round
+
+A round of directions is an answer, and an answer needs a stated question. Before writing an
+exploration entry, run BOTH lenses against the original screen — its captured frame plus its flow
+context (what leads in, what leads out, what the person is there to finish):
+
+1. **[references/heuristics.md](references/heuristics.md)** in critique mode — the breadth scan across
+   the 10 usability heuristics, only the violated ones, max 3 priority actions.
+2. **[references/cognitive-load.md](references/cognitive-load.md)** — the depth drill: extraneous load,
+   mental-model gaps, offloading opportunities, the five triage tests.
+
+Then compose the round FROM the findings:
+
+- The panel's `title` (the question) comes from the top finding, phrased as the design question it
+  opens — "Where does the primary action live?", never "How can this be better?"
+- Each direction's `note` names the finding(s) that direction answers, so every option arrives with a
+  reason and the reviewer judges five arguments, not five pictures.
+- The findings themselves are working material, not canvas content: they inform titles and notes but
+  are never pasted onto frames or into the declaration wholesale.
+- Directions still obey rule 1 above: findings say what is broken; DIFFERENT PATTERNS are how five
+  answers stay five answers. Use the lenses' guidance modes when shaping each one.
+
 **The previous round does not stay on the canvas.** Owner: _"I do not need to see the old explorations from the
 first round. that's not how the exploration process works."_ A round that has been judged is spent: its winners
 came back as variants and its losers are gone, so leaving it up puts rejected work next to live work and makes the
