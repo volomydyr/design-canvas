@@ -179,6 +179,13 @@ process.stdout.write(
       viewport: declaration.viewport,
       /* Canvas-wide forbidden text (overlay tripwire) — the capture checks it on every frame. */
       forbid: declaration.forbid ?? [],
+      /* The open questions, each naming the screen it departs from — mirrors core/shots-route.ts, so a
+         production-build run carries the same original-first evidence the served route does. */
+      explorations: (declaration.explorations ?? []).map((one) => ({
+        id: one.id,
+        original: one.original ?? null,
+        directions: one.screens.filter((screen) => !screen.under).length,
+      })),
       screens,
     },
     null,

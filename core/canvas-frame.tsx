@@ -230,6 +230,7 @@ export function CanvasFrame({
   nextNumber,
   showTitle,
   optionNumber,
+  incumbent,
   verdict,
   onVerdict,
   commenting,
@@ -316,6 +317,11 @@ export function CanvasFrame({
   showTitle: boolean;
   /** 1-based position among an exploration's options. Absent everywhere else, and then no badge is drawn. */
   optionNumber?: number;
+  /**
+   * Exploration only: this frame is TODAY'S design, opening the panel as the reference the numbered options
+   * are judged against. Its name carries "Today:" instead of a number, and it takes no verdict buttons.
+   */
+  incumbent?: boolean;
   /** This option's standing, or null. Only meaningful with `onVerdict`. */
   verdict?: "like" | "dislike" | null;
   /** Present only in an exploration: without it the two buttons are not drawn at all. */
@@ -655,6 +661,7 @@ export function CanvasFrame({
         transition: `opacity 260ms cubic-bezier(0.16, 1, 0.3, 1) ${revealed ? entranceDelay : 0}ms`,
       }}
       data-canvas-screen={screen.id}
+      data-canvas-incumbent={incumbent ? "true" : undefined}
     >
       {/**
        * ABOVE THE FRAME: its title, when the screens are grouped, and nothing else. It carried a state chip and
@@ -686,7 +693,8 @@ export function CanvasFrame({
             className="min-w-0 flex-1 truncate font-semibold tracking-[-0.015em]"
             style={{ fontSize: NAME_SIZE, lineHeight: 1.15 }}
           >
-            {optionNumber ? `${optionNumber}. ` : ""}
+            {/* The incumbent says what it is the same way the options say their number: as plain text. */}
+            {incumbent ? "Today: " : optionNumber ? `${optionNumber}. ` : ""}
             {screen.label}
           </span>
 

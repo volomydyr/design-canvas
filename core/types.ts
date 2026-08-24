@@ -435,6 +435,24 @@ export type CanvasExploration = {
    */
   round?: number;
   /**
+   * THE SCREEN BEING REDESIGNED — the id of a screen this declaration already draws in its permanent views.
+   *
+   * The exploration tab opens every panel with this screen's own captured frame, marked "Today", unnumbered,
+   * with no verdict buttons: it is the reference the options are judged against, never one of the options.
+   * Owner, 2026-08-24: _"anytime you use the exploration, it always shows you not just the five options, but
+   * it shows you six screens where the first one is the original design and the other ones from 1 to 5 are
+   * the explorations."_
+   *
+   * This SUPERSEDES the earlier rule that today's design never appears on the tab (owner, 2026-08-20: "there
+   * is no need to put how the design looks today in the exploration") — he reversed it the day real rounds
+   * were about to start, so the reference sits beside the options instead of a tab away.
+   *
+   * A REFERENCE, NEVER A SECOND DECLARATION: the frame reuses the screen's existing shot, so nothing is
+   * captured twice and the duplicate-address rule stays intact. `check-canvas.mjs` fails an exploration
+   * without one, and fails one naming an id the flows do not declare.
+   */
+  original?: string;
+  /**
    * One screen per direction under comparison, IN THE ORDER THEY ARE NUMBERED.
    *
    * The canvas draws 1, 2, 3 on them from this order, because a reviewer says "number three" out loud and a

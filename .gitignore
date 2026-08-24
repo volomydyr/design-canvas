@@ -3,3 +3,4 @@
 
 # A project's own canvas output never belongs to the skill: the pictures, the review and the manifest are
 # written inside each project's design-canvas/ folder, not here.
+node_modules/

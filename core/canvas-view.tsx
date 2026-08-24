@@ -1728,8 +1728,8 @@ export function CanvasView({
     for (const group of layout.groups)
       for (const node of group.nodes)
         /* DIRECTIONS, not frames: a lone direction with three supporting pictures is still a panel of one, and
-           the verdict buttons stay away from it. */
-        if (!node.supporting)
+           the verdict buttons stay away from it. The incumbent is the reference, never a direction. */
+        if (!node.supporting && !node.incumbent)
           count.set(node.group.id, (count.get(node.group.id) ?? 0) + 1);
     return count;
   }, [layout]);
@@ -1787,12 +1787,15 @@ export function CanvasView({
            title is the direction's NAME, which is the whole basis of choosing between them. */
         showTitle={view !== "flows"}
         /* Numbering and the two verdict buttons exist in the exploration and nowhere else: a grouped screen is
-           not an option, so there is nothing to number it against and nothing to keep or drop. */
-        optionNumber={view === "explore" && !node.supporting ? node.rank + 1 : undefined}
-        verdict={verdictOf[node.screen.id] ?? null}
+           not an option, so there is nothing to number it against and nothing to keep or drop. The incumbent
+           frame carries neither — it is the reference the options depart from, not a candidate. */
+        optionNumber={view === "explore" ? node.option : undefined}
+        incumbent={view === "explore" && node.incumbent ? true : undefined}
+        verdict={node.incumbent ? null : (verdictOf[node.screen.id] ?? null)}
         onVerdict={
           view === "explore" &&
           !node.supporting &&
+          !node.incumbent &&
           (optionsInPanel.get(node.group.id) ?? 0) > 1
             ? (value) => onVerdict(node.screen.id, value)
             : undefined

@@ -82,7 +82,8 @@ const SHELL_SELECTOR =
    serve — and reading them separately is a second opinion rather than a shortcut. */
 async function declared() {
   const response = await fetch(`${shotsApi}&screens=1`);
-  const { screens, kinds, title, note, groups, forbid } = await response.json();
+  const { screens, kinds, title, note, groups, forbid, explorations } =
+    await response.json();
   /* A large declaration may live in its own file under project/canvases/ — the scrape reads them all,
      and the both-ends filter below narrows to the canvas being checked. */
   const declFiles = [path.join(HERE, "project", "flows.ts")];
@@ -115,7 +116,17 @@ async function declared() {
       (here.has(edge.from) || here.has(edge.to)) &&
       !(here.has(edge.from) && here.has(edge.to)),
   );
-  return { screens, edges, half, kinds, title, note, groups, forbid };
+  return {
+    screens,
+    edges,
+    half,
+    kinds,
+    title,
+    note,
+    groups,
+    forbid,
+    explorations: explorations ?? [],
+  };
 }
 
 const failures = [];
@@ -184,7 +195,36 @@ const {
   note: canvasNote,
   groups,
   forbid,
+  explorations,
 } = await declared();
+
+/**
+ * EVERY EXPLORATION OPENS WITH TODAY'S DESIGN. Owner, 2026-08-24: "anytime you use the exploration, it
+ * always shows you not just the five options, but it shows you six screens where the first one is the
+ * original design and the other ones from 1 to 5 are the explorations." So `original` is required, and it
+ * must name a screen the permanent views draw — a reference to an existing frame, never a second capture.
+ * (This reversed the 2026-08-20 rule that kept today's design off the tab; the declaration in types.ts
+ * records both rulings.)
+ */
+for (const exploration of explorations) {
+  if (!exploration.original) {
+    failures.push(
+      `exploration ${exploration.id}: no \`original\` — every panel opens with today's design as its first frame`,
+    );
+    continue;
+  }
+  const originalScreen = screens.find(
+    (screen) => screen.id === exploration.original,
+  );
+  if (!originalScreen)
+    failures.push(
+      `exploration ${exploration.id}: original "${exploration.original}" is not a screen this canvas declares`,
+    );
+  else if (originalScreen.view === "exploration")
+    failures.push(
+      `exploration ${exploration.id}: original "${exploration.original}" is an exploration frame — the reference comes from the permanent views`,
+    );
+}
 
 /**
  * EVERY WORD THIS CANVAS DRAWS, HELD TO ONE STANDARD — see `copy-rules.mjs` for what the standard is and why.
@@ -1441,10 +1481,13 @@ for (const mode of views) {
     0,
   );
   /* Per view: the flow view holds the journeys, the grouped view holds those plus every comparison set, and the
-     exploration tab holds the directions. */
+     exploration tab holds the directions PLUS one incumbent frame per panel — today's design opens each one. */
+  const incumbentsDrawn = onDevice.filter((screen) =>
+    explorations.some((exploration) => exploration.original === screen.id),
+  ).length;
   const expected =
     mode === "explore"
-      ? exploreScreens.length
+      ? exploreScreens.length + incumbentsDrawn
       : mode === "kinds"
         ? kindScreens.length
         : flowScreens.length;

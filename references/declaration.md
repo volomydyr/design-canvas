@@ -239,12 +239,19 @@ highlight per measurement.
 An `explorations` entry is one design question and the competing answers to it. It is the same `CanvasScreen`
 shape as everywhere else — real routes, real pinned states, real claims — with the differences that matter below.
 
-**FIRST, THE TEST THAT DECIDES WHETHER THIS IS AN EXPLORATION.** The directions have to be different PATTERNS, and
-today's design is not one of them. Both rules are in the skill's own "The two rules that decide whether it is an
-exploration at all", both are the owner's, and a round that breaks either is thrown away rather than reviewed:
-same-component-with-toggles is not an exploration, and a frame of the incumbent wastes a panel on what is already
-in the permanent views. If the incumbent is a table, most directions must not be tables. A variations round
-happens only when he asks for one plainly.
+**FIRST, THE TEST THAT DECIDES WHETHER THIS IS AN EXPLORATION.** The directions have to be different PATTERNS.
+The rule is in the skill's own "The two rules that decide whether it is an exploration at all", it is the
+owner's, and a round that breaks it is thrown away rather than reviewed: same-component-with-toggles is not an
+exploration. If the incumbent is a table, most directions must not be tables. A variations round happens only
+when he asks for one plainly.
+
+- **`original` is REQUIRED: the id of the screen being redesigned, from the flows.** The panel opens with that
+  frame — "Today: …", unnumbered, no verdicts — so the options are judged against the incumbent in place.
+  Owner, 2026-08-24: _"it shows you six screens where the first one is the original design and the other ones
+  from 1 to 5 are the explorations."_ It is a reference to the existing shot, never a second declaration, so
+  the duplicate-address rule stays intact. The oracle fails an exploration without it. (This reversed the
+  2026-08-20 rule that kept today's design off the tab; the incumbent is still never a numbered option, and
+  a round of edits to it still fails the patterns test above.)
 
 - **`surface` is the panel's heading, and it names the SCREEN rather than the exercise.** "The settings page
   while a sync is running", never "Option set A" and never the question on its own. A reviewer has to know what
@@ -253,10 +260,8 @@ happens only when he asks for one plainly.
   and is drawn underneath.
 - **The options are NUMBERED from their order in `screens`.** The canvas draws 1..N on the frames because that
   is what a reviewer says out loud. Order them deliberately: the most conventional departure first and the
-  boldest last, so reading left to right travels away from habit. THE INCUMBENT IS NOT OPTION ONE — it is not an
-  option at all. This bullet used to say "the first option should be the incumbent or the most obvious answer",
-  and that sentence is what produced a round whose first frame was the shipped design: _"there is no need to put
-  how the design looks today in the exploration. Why would you do that? This is not an exploration."_
+  boldest last, so reading left to right travels away from habit. THE INCUMBENT IS NEVER A NUMBERED OPTION —
+  it is the `original` reference above, drawn before option 1 and outside the numbering.
 
 - **A screen is a DIRECTION, and its `label` is the direction's name.** "Run panel above the table", not "The
   integrations page". The label is what gets said out loud when choosing, so it has to name the difference

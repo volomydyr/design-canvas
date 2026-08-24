@@ -167,6 +167,13 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
           viewport: declaration.viewport,
           /* The declared sections travel with the screens, because the oracle checks one against the other. */
           kinds: declaration.kinds ?? null,
+          /* The open questions, each naming the screen it departs from. Served so the oracle can enforce
+             the original-first rule (owner, 2026-08-24): every panel opens with today's design. */
+          explorations: (declaration.explorations ?? []).map((one) => ({
+            id: one.id,
+            original: one.original ?? null,
+            directions: one.screens.filter((screen) => !screen.under).length,
+          })),
           /* Canvas-wide forbidden text (overlay tripwire) — served, or the capture never hears of it. */
           forbid: declaration.forbid ?? [],
           /* Both views: an exploration's directions are captured exactly like a flow's screens, or the

@@ -97,7 +97,9 @@ and what gets handed to developers.
 **Exploration** is the third tab, and it exists only while a design question is open: several genuinely
 different answers to one question, each a real route of the real app, drawn side by side at full size so they
 disagree with each other visibly. It is the 5-then-3-then-1 funnel expressed as declaration — round one is one
-entry with five directions, round two REPLACES it with three variants of whichever won.
+entry with five directions, round two REPLACES it with three variants of whichever won. Every panel opens
+with TODAY'S DESIGN as its first frame (`original`, required) — six frames in a five-direction round: the
+reference, then options 1 to 5.
 
 ### The two rules that decide whether it is an exploration at all
 
@@ -117,11 +119,18 @@ A variation-of-the-incumbent round happens only when he ASKS for one: _"If I nee
 component, I will say it plainly."_ Feedback that a surface is too complicated, too heavy, or hard to understand
 is never that request — it is the signal that the pattern itself is the thing under question.
 
-**2. TODAY'S DESIGN IS NEVER ONE OF THE FRAMES.** The current design already exists in the two permanent views,
-which is where it is looked at. A frame of it inside the exploration spends a panel on the thing being departed
-from and quietly invites the round to be measured as edits to it. Owner, same round: _"there is no need to put how
-the design looks today in the exploration. Why would you do that? This is not an exploration."_ Compare against
-the live surface, never against a frame of it.
+**2. TODAY'S DESIGN OPENS THE PANEL — AS THE REFERENCE, NEVER AS AN OPTION.** Every exploration declares
+`original`: the id of the screen being redesigned, already captured in the permanent views. The tab draws that
+frame FIRST, named "Today: …", unnumbered, with no verdict buttons — so the reviewer judges the options against
+the incumbent without leaving the tab, and the incumbent can never be mistaken for a candidate. Owner,
+2026-08-24: _"anytime you use the exploration, it always shows you not just the five options, but it shows you
+six screens where the first one is the original design and the other ones from 1 to 5 are the explorations."_
+This REVERSED his 2026-08-20 ruling that kept today's design off the tab ("there is no need to put how the
+design looks today in the exploration") — he changed it the day real rounds were about to start. What survives
+from the old rule: the incumbent is a REFERENCE, not a sixth direction. It reuses the screen's existing shot
+(nothing is photographed twice), it takes no number and no verdict, and a round whose options are edits of it
+still fails rule 1. `check-canvas.mjs` fails an exploration without an `original`, or with one the flows do
+not declare.
 
 **The previous round does not stay on the canvas.** Owner: _"I do not need to see the old explorations from the
 first round. that's not how the exploration process works."_ A round that has been judged is spent: its winners

@@ -108,6 +108,10 @@ export type LaidOutNode = {
   h: number;
   rank: number;
   row: number;
+  /** Exploration only: this direction's spoken number, 1-based. Absent on the incumbent and on supporters. */
+  option?: number;
+  /** Exploration only: the panel's first frame is TODAY'S design, drawn as reference. See `CanvasExploration.original`. */
+  incumbent?: boolean;
   /** Exploration only: a frame drawn UNDER a direction rather than being one. See `CanvasScreen.under`. */
   supporting?: boolean;
   /** Flows only: this node is an explanation panel, not a picture. See `CanvasScreen.explain`. */
@@ -988,11 +992,37 @@ export function layoutExplorations(
           `exploration ${exploration.id}: "${screen.id}" sits under "${screen.under}", which is not a direction in it`,
         );
 
+    /**
+     * THE PANEL OPENS WITH TODAY'S DESIGN. `original` names a screen the permanent views already draw, and
+     * its frame is column zero of every round: marked "Today", unnumbered, no verdict buttons — the
+     * reference the options are judged against, never one of them. Owner, 2026-08-24: "it shows you six
+     * screens where the first one is the original design and the other ones from 1 to 5 are the
+     * explorations." A reference reuses the screen's own shot, so nothing is photographed twice.
+     */
+    const originalScreen = exploration.original
+      ? declaration.flows
+          .flatMap((flow) => flow.screens)
+          .find((screen) => screen.id === exploration.original)
+      : undefined;
+    if (exploration.original && !originalScreen)
+      problems.push(
+        `exploration ${exploration.id}: original "${exploration.original}" is not a screen the flows declare`,
+      );
+    if (!exploration.original)
+      problems.push(
+        `exploration ${exploration.id}: no original — every panel opens with today's design as its first frame`,
+      );
+
     let x = 0;
     const top = originY + TITLE_SPACE + CAPTION_SPACE;
     let tallest = 0;
     const nodes: LaidOutNode[] = [];
-    mains.forEach((main, index) => {
+    const columns: { screen: CanvasScreen; incumbent: boolean }[] = [
+      ...(originalScreen ? [{ screen: originalScreen, incumbent: true }] : []),
+      ...mains.map((screen) => ({ screen, incumbent: false })),
+    ];
+    let optionNumber = 0;
+    columns.forEach(({ screen: main, incumbent }, index) => {
       const size = frameSize(main, declaration, captured);
       nodes.push({
         screen: main,
@@ -1003,6 +1033,9 @@ export function layoutExplorations(
         h: size.h,
         rank: index,
         row: 0,
+        /* The spoken number belongs to the OPTIONS: the incumbent is what "number three" departs from. */
+        option: incumbent ? undefined : ++optionNumber,
+        incumbent: incumbent || undefined,
       });
       /* The column's own width is the widest thing in it, so the next direction never lands on this one. */
       let columnW = Math.max(size.w, chromeWidth(main, declaration, captured));
