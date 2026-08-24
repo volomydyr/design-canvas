@@ -149,6 +149,16 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             id: flow.id,
             title: flow.title,
             note: flow.note,
+            /* Whether this flow is a comparison set (drawn in the grouped view only). Served so the
+               oracle's user-flow rule knows which groups claim to be journeys at all. */
+            groupedOnly: flow.groupedOnly ?? false,
+            /* The flow's own edges, so the oracle can judge each flow AS a flow: a "flow" whose every
+               edge is a condition is a state chain wearing a flow's clothes — see the action-edge rule. */
+            edges: flow.edges.map((edge) => ({
+              from: edge.from,
+              to: edge.to,
+              label: edge.label ?? null,
+            })),
           })),
           viewport: declaration.viewport,
           /* The declared sections travel with the screens, because the oracle checks one against the other. */

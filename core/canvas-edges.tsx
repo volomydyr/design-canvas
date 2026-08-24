@@ -29,13 +29,12 @@ const BRANCH_DASH = "9 7";
 const OVERSHOOT = 420;
 /** In world pixels, matching the frame captions: an edge label is canvas furniture, not screen furniture. */
 const LABEL_SIZE = 26;
-/** The interaction-origin accent — the same tint the boundary chrome speaks in, so the canvas keeps one voice. */
-const ORIGIN_ACCENT = "hsl(187 65% 55%)";
-
-/** One name for an edge-and-ring pair, shared by the edge layer and the ring layer so hover can couple them. */
-export function originKeyOf(groupId: string, edge: LaidOutEdge): string {
-  return `${groupId}:${edge.from}->${edge.to}#${edge.originIndex ?? 0}`;
-}
+/**
+ * The interaction-origin accent. ORANGE on purpose: blue is the review queue, green is the answered pin,
+ * red is a failure — a fourth job needs a fourth color, or the reader starts cross-wiring meanings. The
+ * owner named it: "we already use blue, green and red for other purposes, so dont mix them in".
+ */
+const ORIGIN_ACCENT = "hsl(28 95% 55%)";
 
 function toneOf(edge: LaidOutEdge): { opacity: number; dash?: string } {
   if (edge.kind === "branch" || edge.longWay)
@@ -46,18 +45,15 @@ function toneOf(edge: LaidOutEdge): { opacity: number; dash?: string } {
 export function CanvasEdgeLayer({
   groups,
   showOrigins = false,
-  hoveredOrigin = null,
-  onHoverOrigin,
 }: {
   groups: LaidOutGroup[];
   /**
    * THE INTERACTION-ORIGIN MODE, off by default: when on, an edge whose origin the capture measured is
-   * drawn from its ring's border (`dOrigin`) rather than from the frame border, its label carries the
-   * ring's number, and hovering either side of the pair lights the other. See `CanvasEdge.origin`.
+   * drawn in the origin accent from its highlight's border (`dOrigin`) rather than from the frame border,
+   * so the line connects the HIGHLIGHT to the next screen. No numbers and no hover choreography — the
+   * owner retired both: the connection itself is the pairing. See `CanvasEdge.origin`.
    */
   showOrigins?: boolean;
-  hoveredOrigin?: string | null;
-  onHoverOrigin?: (key: string | null) => void;
 }) {
   return (
     <>
@@ -93,15 +89,15 @@ export function CanvasEdgeLayer({
             {group.edges.map((edge, index) => {
               const tone = toneOf(edge);
               const anchored = showOrigins && Boolean(edge.dOrigin);
-              const lit =
-                anchored && hoveredOrigin === originKeyOf(group.id, edge);
               return (
                 <path
                   key={`${edge.from}-${edge.to}-${index}`}
                   d={anchored ? edge.dOrigin : edge.d}
                   fill="none"
-                  stroke={lit ? ORIGIN_ACCENT : "hsl(0 0% 100% / 0.42)"}
-                  strokeOpacity={lit ? 1 : tone.opacity}
+                  /* An anchored edge speaks the origin accent end to end, so the eye can follow one
+                     orange line from the pressed control to the screen it opens. */
+                  stroke={anchored ? ORIGIN_ACCENT : "hsl(0 0% 100% / 0.42)"}
+                  strokeOpacity={anchored ? 0.9 : tone.opacity}
                   strokeDasharray={tone.dash}
                   strokeLinecap="round"
                   markerEnd={`url(#design-canvas-arrow-${group.id})`}
@@ -119,11 +115,8 @@ export function CanvasEdgeLayer({
       {/* The labels are HTML rather than SVG text so they use the app's own type and border tokens, and
           they sit on the curve's midpoint rather than beside it. */}
       {groups.flatMap((group) =>
-        group.edges.map((edge, index) => {
-          const numbered = showOrigins && edge.originIndex !== undefined;
-          const key = numbered ? originKeyOf(group.id, edge) : null;
-          const lit = key !== null && hoveredOrigin === key;
-          return edge.label ? (
+        group.edges.map((edge, index) =>
+          edge.label ? (
             <span
               key={`label-${group.id}-${edge.from}-${edge.to}-${index}`}
               /**
@@ -141,10 +134,7 @@ export function CanvasEdgeLayer({
                * stage behind it, and white text. The value is the stage colour from `design-tokens.md`, one
                * of the two greys this whole tool is drawn in.
                */
-              /* Hoverable only in origin mode, where the pill is one half of a pair worth pointing at. */
-              className={`absolute whitespace-nowrap rounded-full border font-medium text-white ${
-                numbered ? "pointer-events-auto" : "pointer-events-none"
-              } ${lit ? "border-[hsl(187_65%_55%)]" : "border-white/[0.14]"} bg-[hsl(192_12%_13%)]`}
+              className="pointer-events-none absolute whitespace-nowrap rounded-full border border-white/[0.14] bg-[hsl(192_12%_13%)] font-medium text-white"
               style={{
                 left: edge.mx,
                 top: edge.my,
@@ -156,29 +146,11 @@ export function CanvasEdgeLayer({
                 transform: "translate(-50%, -50%)",
               }}
               data-canvas-edge-label={`${edge.from}->${edge.to}`}
-              onMouseEnter={key ? () => onHoverOrigin?.(key) : undefined}
-              onMouseLeave={key ? () => onHoverOrigin?.(null) : undefined}
             >
-              {numbered ? (
-                /* The pairing number, matching the chip on the ring this edge starts at. */
-                <span
-                  className="mr-[8px] inline-flex items-center justify-center rounded-full align-middle"
-                  style={{
-                    background: "hsl(187 65% 55%)",
-                    color: "hsl(192 30% 10%)",
-                    width: LABEL_SIZE * 1.15,
-                    height: LABEL_SIZE * 1.15,
-                    fontSize: LABEL_SIZE * 0.72,
-                    fontWeight: 700,
-                  }}
-                >
-                  {edge.originIndex}
-                </span>
-              ) : null}
               {edge.label}
             </span>
-          ) : null;
-        }),
+          ) : null,
+        ),
       )}
     </>
   );

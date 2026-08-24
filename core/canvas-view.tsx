@@ -73,6 +73,7 @@ import {
   IconPhone,
   IconPlus,
   IconRight,
+  IconTarget,
   IconTrash,
 } from "./icons";
 import {
@@ -1301,7 +1302,6 @@ export function CanvasView({
    * origin to show: a control that could never draw anything is a control that does nothing.
    */
   const [showOrigins, setShowOrigins] = useState(false);
-  const [hoveredOrigin, setHoveredOrigin] = useState<string | null>(null);
   const hasOrigins = useMemo(
     () =>
       view === "flows" &&
@@ -1664,6 +1664,10 @@ export function CanvasView({
       fit: () => surface.current?.frame(layout.box),
       zoomBy: (factor: number) => surface.current?.zoomBy(factor),
       setView: (next: ViewMode) => setView(next),
+      /* WHICH VIEW IS ACTUALLY RENDERED. The oracle used to setView and count after a fixed sleep, and
+         on a loaded dev machine the count ran against the previous view — 64 grouped frames reported as
+         the flows view. Asking is deterministic; sleeping is a guess. */
+      view: () => view,
       /**
        * DRIVEN BY THE ORACLE so it can assert every device rather than the one the canvas opens on.
        *
@@ -1687,7 +1691,7 @@ export function CanvasView({
     return () => {
       delete (window as unknown as { __devCanvas?: typeof api }).__devCanvas;
     };
-  }, [goToScreen, layout]);
+  }, [goToScreen, layout, view]);
 
   /**
    * Comment mode on `c`, and nothing else.
@@ -1903,12 +1907,6 @@ export function CanvasView({
             data-canvas-section={group.id}
           />
         ))}
-        <CanvasEdgeLayer
-          groups={layout.groups}
-          showOrigins={originsOn}
-          hoveredOrigin={hoveredOrigin}
-          onHoverOrigin={setHoveredOrigin}
-        />
         {layout.groups.map((group) => (
           <Fragment key={group.id}>
             {/**
@@ -1935,14 +1933,16 @@ export function CanvasView({
             {group.nodes.map(frameFor)}
           </Fragment>
         ))}
-        {/* Above the frames, or a ring around a control would be painted under the picture it rings. */}
-        {originsOn ? (
-          <CanvasOriginLayer
-            groups={layout.groups}
-            hoveredOrigin={hoveredOrigin}
-            onHoverOrigin={setHoveredOrigin}
-          />
-        ) : null}
+        {/**
+         * THE EDGES DRAW ABOVE THE FRAMES, deliberately after them in the DOM. They used to render
+         * first, and on a dense flow a bypass lane or a label pill slid UNDER the frames it passed —
+         * the owner: "you simply can't see right where it points or where it points from. So ideally
+         * they should always be above the screens and not overlayed by them." The router still keeps
+         * paths out of frames it does not belong to; this only decides who wins where they meet.
+         */}
+        <CanvasEdgeLayer groups={layout.groups} showOrigins={originsOn} />
+        {/* Above everything, or a highlight around a control would paint under the picture it marks. */}
+        {originsOn ? <CanvasOriginLayer groups={layout.groups} /> : null}
       </CanvasSurface>
 
       {/**
@@ -2150,27 +2150,6 @@ export function CanvasView({
           </button>
         ))}
 
-        {/* THE INTERACTION-ORIGIN TOGGLE: flows view only, and only when a measured origin exists to
-            draw. Rests off — see the mode's note above the state it flips. */}
-        {hasOrigins ? (
-          <>
-            <span className="mx-1 h-5 w-px bg-white/[0.14]" />
-            <button
-              type="button"
-              aria-pressed={showOrigins}
-              title="Show where each move starts"
-              onClick={() => setShowOrigins((was) => !was)}
-              className={cn(
-                BAR_ITEM,
-                BAR_PAD,
-                showOrigins ? BAR_TAB_ON : BAR_QUIET,
-              )}
-              data-canvas-origins-toggle=""
-            >
-              Origins
-            </button>
-          </>
-        ) : null}
 
 
         {/**
@@ -2423,6 +2402,33 @@ export function CanvasView({
         data-canvas-chrome=""
         data-canvas-zoombar=""
       >
+        {/**
+         * THE PRESS-ORIGINS TOGGLE, an instrument beside the zoom rather than a word in the toolbar.
+         * The toolbar is the row of one-off view choices; this is a display layer you switch on and
+         * off, which is the zoom bar's kind of control — the owner rejected the labelled toolbar pill
+         * as neither clear nor typical. Flows view only, and only when a measured origin exists: a
+         * control that could never draw anything is a control that does nothing. Rests off.
+         */}
+        {hasOrigins ? (
+          <>
+            <button
+              type="button"
+              aria-pressed={showOrigins}
+              aria-label="Show press origins"
+              title="Show where each press happens"
+              onClick={() => setShowOrigins((was) => !was)}
+              className={cn(
+                BAR_ITEM,
+                BAR_SQUARE,
+                showOrigins ? BAR_TAB_ON : BAR_QUIET,
+              )}
+              data-canvas-origins-toggle=""
+            >
+              <IconTarget />
+            </button>
+            <span className="mx-1 h-5 w-px bg-white/[0.14]" />
+          </>
+        ) : null}
         <button
           type="button"
           aria-label="Zoom out"

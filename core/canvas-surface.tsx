@@ -472,6 +472,11 @@ export const CanvasSurface = forwardRef<
          rather than a child, so it keeps its selection. The comment box adds `select-text` back for itself. */
       className="absolute inset-0 touch-none select-none overflow-hidden bg-[hsl(192_12%_13%)]"
       style={{ cursor: grabbing ? "grabbing" : "grab" }}
+      /* `select-none` stops text selection but NOT the browser's native image drag: pressing on a frame
+         and moving still lifted a ghost of the screenshot, which read as "selecting the screen" — the
+         owner: "I sometimes accidentally select screens, but it doesnt make sense at all." A picture on
+         the canvas is a picture, never a draggable resource, so the whole world refuses drag starts. */
+      onDragStart={(event) => event.preventDefault()}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}

@@ -342,6 +342,28 @@ for (const edge of half)
 checkLabels(edges);
 
 /**
+ * A USER FLOW IS CONNECTED BY ACTIONS, or it is not a user flow. The owner, on a "flow" that was a
+ * linear chain of states joined by "When …" explanations: "it's literally a linear set of screens that
+ * are connected through explanations of states rather than actions that the user performs… It has to be
+ * very clear that user flows are connected by actions. If the user does this, they see this." A chain of
+ * states or versions is what GROUPED SCREENS exist for — showing the same thing in both views erases the
+ * reason the two tabs are separate. So: every flow that draws edges must contain at least one edge whose
+ * label is an action (a verb from the closed list other than "When"). Condition edges stay legal as
+ * BRANCHES of a journey; they just cannot be the whole of one.
+ */
+for (const group of groups ?? []) {
+  if (group.groupedOnly || !(group.edges ?? []).length) continue;
+  const hasAction = group.edges.some((edge) => {
+    const first = (edge.label ?? "").split(" ")[0];
+    return first !== "When" && VERBS.includes(first);
+  });
+  if (!hasAction)
+    failures.push(
+      `flow "${group.id}" has no action edge — a chain of states is grouped screens, not a user flow`,
+    );
+}
+
+/**
  * A frame count is per VIEW, not per canvas. The two permanent views draw the flow screens; the exploration tab
  * draws the directions and nothing else. Counting every declared screen against one view was correct while
  * there were only two of them, and would now fail every canvas that has an open question on it.
@@ -660,19 +682,40 @@ const checkContext = await browser.newContext({
 const page = await checkContext.newPage();
 page.on("pageerror", (error) => failures.push(`page error: ${error.message}`));
 
+/**
+ * ONE RELOAD BEFORE GIVING UP. Against a dev server the first hit of the canvas route compiles it, and
+ * on a loaded machine that compile alone can outrun the 30-second wait — a whole oracle run then dies on
+ * a page that would have been fine two seconds later. A reload after a failed wait gets the already
+ * compiled page; a second failure is a real one and propagates.
+ */
 await page.goto(canvasUrl, { waitUntil: "domcontentloaded" });
-await page.waitForFunction(() => Boolean(window.__devCanvas), null, {
-  timeout: 30_000,
-});
+try {
+  await page.waitForFunction(() => Boolean(window.__devCanvas), null, {
+    timeout: 30_000,
+  });
+} catch {
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForFunction(() => Boolean(window.__devCanvas), null, {
+    timeout: 120_000,
+  });
+}
 
 /**
- * ASK FOR THE VIEW BEFORE COUNTING ITS FRAMES. This script's own trap #8 in reverse: the canvas no longer opens
- * on a fixed view — an open exploration takes the first tab and the first paint — so a count taken "as it loads"
- * is a count of whichever view happened to win. Stated explicitly, the number below means one thing on every
- * canvas.
+ * ASK FOR THE VIEW BEFORE COUNTING ITS FRAMES — and WAIT FOR IT TO ACTUALLY RENDER. This script's own
+ * trap #8 in reverse, twice over: the canvas no longer opens on a fixed view, and on a loaded machine a
+ * fixed sleep after `setView` still counted the PREVIOUS view once (64 grouped frames reported as the
+ * flows view). `__devCanvas.view()` reports the rendered view, so the switch is awaited, never slept on.
  */
-await page.evaluate(() => window.__devCanvas.setView("kinds"));
-await page.waitForTimeout(400);
+const switchView = async (mode) => {
+  await page.evaluate((next) => window.__devCanvas.setView(next), mode);
+  await page.waitForFunction(
+    (next) => window.__devCanvas?.view?.() === next,
+    mode,
+    { timeout: 30_000 },
+  );
+  await page.waitForTimeout(200);
+};
+await switchView("kinds");
 
 const chrome = await page.evaluate((shellSelector) => {
   const surface = document.querySelector("[data-canvas-surface]");
@@ -754,8 +797,7 @@ for (const screen of screens) {
    */
   if (screen.explain) {
     if (inView !== "flows") {
-      await page.evaluate((next) => window.__devCanvas.setView(next), "flows");
-      await page.waitForTimeout(500);
+      await switchView("flows");
       inView = "flows";
     }
     await page.evaluate((id) => window.__devCanvas.goTo(id), screen.id);
@@ -802,8 +844,7 @@ for (const screen of screens) {
    * each view change, every run. It read as a broken image and was a race in this script.
    */
   if (wants !== inView) {
-    await page.evaluate((next) => window.__devCanvas.setView(next), wants);
-    await page.waitForTimeout(500);
+    await switchView(wants);
     inView = wants;
   }
   await page.evaluate((id) => window.__devCanvas.goTo(id), screen.id);
@@ -893,8 +934,7 @@ console.log(
 /* The edges only exist in the flows view, and the canvas no longer opens on it — grouped screens is the default.
    Asked for explicitly rather than assumed, or every assertion below would quietly pass against a view that
    draws no edges at all. */
-await page.evaluate(() => window.__devCanvas.setView("flows"));
-await page.waitForTimeout(800);
+await switchView("flows");
 
 /**
  * An edge belongs to the canvas, not to a picture of it: it must start on the frame it comes from and end on
@@ -1066,7 +1106,7 @@ if (measuredOrigins.length > 0) {
     await page.waitForTimeout(200);
     if (failures.length === 0)
       console.log(
-        `interaction origins: ${measuredOrigins.length} numbered ring(s) drawn with the mode on, none at rest`,
+        `interaction origins: ${measuredOrigins.length} highlight(s) drawn with the mode on, none at rest`,
       );
   }
 }
@@ -1342,8 +1382,7 @@ await page.evaluate(() => window.__devCanvas.setCommenting(false));
 
 /* ------------------------------------------------------------ the other view */
 
-await page.evaluate(() => window.__devCanvas.setView("kinds"));
-await page.waitForTimeout(600);
+await switchView("kinds");
 const kinds = await page.evaluate(() => ({
   frames: document.querySelectorAll("[data-canvas-screen]").length,
   edges: document.querySelectorAll("path[data-canvas-edge]").length,
@@ -1367,8 +1406,7 @@ console.log(
  * width scales with the zoom and an assertion that cannot fail is worse than no assertion.
  */
 for (const mode of views) {
-  await page.evaluate((next) => window.__devCanvas.setView(next), mode);
-  await page.waitForTimeout(400);
+  await switchView(mode);
   const groups = await page.evaluate(() => window.__devCanvas.groups());
   /* Explanation panels are counted apart: they are nodes in a flow's layout, but they are not frames, and
      folding them into the frame count would let a missing PICTURE hide behind a present PANEL. */
@@ -1438,8 +1476,8 @@ for (const mode of views) {
  */
 {
   let opened = 0;
-  for (const screen of screens) {
-    if (!screen.url || screen.explain || screen.frozen) continue;
+  /* One visit of one URL, returning the claim problems it found (empty = clean). */
+  const visit = async (screen) => {
     const live = await checkContext.newPage();
     try {
       await live.goto(base + screen.url, {
@@ -1466,24 +1504,38 @@ for (const mode of views) {
         await live.waitForTimeout(500);
         text = await readAll();
       }
+      const problems = [];
       for (const claim of wanted)
         if (!text.includes(claim))
-          failures.push(
+          problems.push(
             `${screen.id}: its Open destination does not show "${claim}" on the served app — the button does not land on the picture`,
           );
       for (const nope of banned)
         if (text.includes(nope))
-          failures.push(
+          problems.push(
             `${screen.id}: its Open destination shows "${nope}" on the served app`,
           );
-      opened += 1;
+      return problems;
     } catch (error) {
-      failures.push(
+      return [
         `${screen.id}: its Open destination did not load — ${error.message}`,
-      );
+      ];
     } finally {
       await live.close();
     }
+  };
+  for (const screen of screens) {
+    if (!screen.url || screen.explain || screen.frozen) continue;
+    /**
+     * ONE RETRY BEFORE A VERDICT. Against a dev server the first hit of a route compiles it, and a cold
+     * route plus a one-shot dialog opener lost the race often enough that whole oracle runs failed on a
+     * different screen each time — three full reruns in one sitting. The second visit hits the compiled
+     * route; a screen that fails BOTH visits has a real problem and every problem is reported.
+     */
+    let problems = await visit(screen);
+    if (problems.length > 0) problems = await visit(screen);
+    failures.push(...problems);
+    opened += 1;
   }
   console.log(
     `open destinations: ${opened} live URLs re-proved their claims on the served app`,

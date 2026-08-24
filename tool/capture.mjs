@@ -232,6 +232,16 @@ function stampOf(screen) {
   if (/[?&]canvas=/.test(screen.url ?? ""))
     entries.push("design-canvas/project/states.ts");
   for (const file of filesReachedFrom(entries)) {
+    /**
+     * THE VIEWER IS NOT PART OF ANY PICTURE. `design-canvas/core/` renders the canvas page, never the
+     * captured app — but the pin adapter imports one constant from core/types.ts, which pulled the whole
+     * viewer into every pinned screen's closure. The cost was real: a documentation comment added to
+     * core/types.ts re-stamped 124 of 126 screens and bought a full recapture that proved nothing, twice
+     * in one day (every skill reinstall touches core/). The adapter itself (project/) stays in the stamp;
+     * a core change that could affect captures goes through `--all`, the escape hatch that exists for
+     * exactly the changes the stamp cannot model.
+     */
+    if (file.startsWith("design-canvas/core/")) continue;
     const at = path.join(ROOT, file);
     sources[file] = existsSync(at)
       ? createHash("sha256").update(readFileSync(at)).digest("hex").slice(0, 16)

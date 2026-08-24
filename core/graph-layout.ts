@@ -135,8 +135,6 @@ export type LaidOutEdge = CanvasEdge & {
    * guessing.
    */
   originBox?: Box;
-  /** 1-based number pairing the ring with its edge, counted per flow in declaration order. */
-  originIndex?: number;
   /** The path re-anchored to start at the ring's border, drawn instead of `d` when the mode is on. */
   dOrigin?: string;
 };
@@ -177,7 +175,10 @@ export function frameSize(
   /* An explanation frame has no capture and no viewport: it is a text panel, and it takes the panel's own
      fixed size rather than a screen's. Sizing it like a screen was the first bug this branch prevents — a
      1152-wide card holding two sentences. */
-  if (screen.explain) return { ...EXPLAIN_SIZE };
+  if (screen.explain)
+    return (screen.explainKind ?? "").startsWith("canvas:")
+      ? { ...BOUNDARY_SIZE }
+      : { ...EXPLAIN_SIZE };
   const shot = captured?.(screen.id);
   const view = shot ?? viewportFor(screen, declaration);
   return {
@@ -192,6 +193,13 @@ export function frameSize(
  * with notes between them, never as screens of two kinds.
  */
 export const EXPLAIN_SIZE = { w: 460, h: 280 };
+
+/**
+ * A BOUNDARY CARD is taller than the other explanation panels: it carries the same title and body plus
+ * the big rounded Open Canvas button, and the first version at the shared height cut its own body off
+ * mid-sentence — visible in the owner's screenshot of the reader-registration card.
+ */
+export const BOUNDARY_SIZE = { w: 460, h: 360 };
 
 /**
  * HOW WIDE A PHONE FRAME'S CAPTION AND FOOT ARE ALLOWED TO BE, in world units.
@@ -447,7 +455,6 @@ function routeEdges(
    * uniform scale maps between the two. Matched on target AND spec, so two edges leaving the same screen
    * for the same target from different controls each find their own rectangle.
    */
-  let originCounter = 0;
   const originBoxOf = (edge: CanvasEdge): Box | undefined => {
     if (!edge.origin) return undefined;
     const node = at.get(edge.from);
@@ -500,9 +507,8 @@ function routeEdges(
 
     const straight = to.rank - from.rank === 1;
 
-    /* The ring and its number, when this edge declares an origin the capture measured. */
+    /* The highlight, when this edge declares an origin the capture measured. */
     const originBox = originBoxOf(edge);
-    const originIndex = originBox ? (originCounter += 1) : undefined;
 
     if (straight) {
       const x1 = from.x + from.w;
@@ -531,7 +537,7 @@ function routeEdges(
         d: `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`,
         ...midpoint(x1, y1, c1x, y1, c2x, y2, x2, y2),
         longWay: false,
-        ...(originBox ? { originBox, originIndex, dOrigin } : {}),
+        ...(originBox ? { originBox, dOrigin } : {}),
       });
       continue;
     }
@@ -595,7 +601,7 @@ function routeEdges(
       mx: (x1 + x2) / 2,
       my: lane,
       longWay: true,
-      ...(originBox ? { originBox, originIndex, dOrigin } : {}),
+      ...(originBox ? { originBox, dOrigin } : {}),
     });
   }
   return { edges: out, lanes, deepest };

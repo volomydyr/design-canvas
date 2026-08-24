@@ -215,7 +215,12 @@ function failedFrom(output) {
   return [...ids];
 }
 
-let outstanding = null;
+/**
+ * `--only a,b` PASSES THROUGH to capture.mjs. It always worked on the inner script and was silently
+ * ignored here, so "recapture these two screens" ran a changed-only pass that captured nothing — and the
+ * workaround was booting the production server by hand. The retry loop then narrows within the set.
+ */
+let outstanding = argOf("only") ? argOf("only").split(",").filter(Boolean) : null;
 let lastCode = 0;
 for (let round = 0; round <= rounds; round += 1) {
   const label = round === 0 ? "capture" : `retry ${round}`;

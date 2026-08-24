@@ -523,9 +523,11 @@ the same approach for both, it will start to be confusing."_ Declare which one i
   repository, a transactional email, the mobile app. Tinted dashed panel, "In this product, not capturable
   from here". It tells the reviewer this step is ours and will be designed, the canvas just cannot reach it.
 - `"canvas:<slug>"` — a BOUNDARY NODE: the step continues in another canvas of this project (a flow born in
-  a quote, a tag press landing in stock). Solid tinted panel, "Continues in the … canvas", with a live
-  "Open canvas" link — this is how canvases interconnect instead of duplicating each other's screens.
-  Use it for real in-app crossings only; a step that leaves the product is `"outside"` or `"product"`.
+  a quote, a tag press landing in stock). Drawn as the dark panels' inverse — a white card, dark text, no
+  border — with one big fully rounded "Open Canvas" button that navigates to the other canvas (the button
+  carries `data-canvas-chrome`, or the surface's pan handler eats its clicks — that bug shipped once).
+  This is how canvases interconnect instead of duplicating each other's screens. Use it for real in-app
+  crossings only; a step that leaves the product is `"outside"` or `"product"`.
 
 Then **audit reachability and delete what nothing reaches.** A canvas that includes an unreachable screen
 is lying about the product, and everything downstream treats the lie as real. Building one of these once
@@ -585,11 +587,19 @@ accepted as one instant of a moving surface, with every other check still applie
 An action edge can also declare WHERE its press lives: `origin: "Mark as Shipped"` (the control's exact
 visible text, or `css=` plus a selector) is measured by the capture into a rectangle in the manifest — a
 spec resolving to zero or several visible places fails like a missed claim, so the region can never drift.
-The flows view draws the measured regions as numbered rings behind an **Origins toggle that rests off**,
-pairs each ring with its edge's chip, couples them on hover, and re-anchors the edge to the ring; the
-oracle proves the toggle, the count and the pairing. Built for dense flows — a toolbar that opens fifteen
-dialogs — and left off everywhere the arrows already explain themselves. `references/declaration.md`
-carries the full rule.
+The flows view draws the measured regions as vivid ORANGE highlights (orange because blue, green and red
+already carry other meanings) behind a press-origins toggle in the zoom bar that RESTS OFF; with it on,
+each edge re-anchors to start AT its highlight, so one orange line connects the pressed control to the
+screen it opens — that connection is the whole pairing: no numbers, no hover choreography (both retired
+on the owner's feedback as overcomplication). The oracle proves the toggle, the count and the anchoring.
+Built for dense flows — a toolbar that opens fifteen dialogs — and left off everywhere the arrows already
+explain themselves. `references/declaration.md` carries the full rule.
+
+A USER FLOW IS CONNECTED BY ACTIONS. "If the user does this, they see this" — that is the definition, in
+the owner's words, and a "flow" that is a linear chain of states joined only by "When …" conditions is a
+grouped-screens section wearing a flow's clothes. The oracle fails any flow with edges but no action edge.
+Condition edges stay legal as branches of a journey; they cannot be the whole of one. States, variants and
+versions belong in grouped screens — showing the same set in both tabs erases the reason there are two.
 
 The flows are the part most likely to be got wrong. A user flow is a **branching diagram**, not a row:
 

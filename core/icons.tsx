@@ -45,6 +45,16 @@ function Svg({
   );
 }
 
+/** The press-origins toggle: a target, because it marks where on a frame the press lands. */
+export function IconTarget(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="8" />
+      <circle cx="12" cy="12" r="2.5" fill="currentColor" stroke="none" />
+    </Svg>
+  );
+}
+
 export function IconMinus(props: IconProps) {
   return (
     <Svg {...props}>

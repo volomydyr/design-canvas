@@ -19,9 +19,12 @@
  *   the mobile app). Same dashed language — still not a picture — but tinted toward the canvas accent and
  *   footed "In this product, not capturable from here", so a reader knows this step is ours and will be
  *   designed, just not photographable from where the canvas stands.
- * - CANVAS BOUNDARY (`canvas:<slug>`): the step continues in ANOTHER CANVAS of this project. Solid tinted
- *   ring — the step is real, captured, just filed elsewhere — footed "Continues in the … canvas" with an
- *   "Open canvas" link. This is how canvases interconnect without duplicating each other's screens.
+ * - CANVAS BOUNDARY (`canvas:<slug>`): the step continues in ANOTHER CANVAS of this project. Drawn as the
+ *   dark panels' INVERSE — a white card with dark text, no border, and one big fully rounded button that
+ *   opens the other canvas. The owner set the shape: same card as the other explanation nodes "kind of
+ *   like vice versa… white with dark text", a "typical fully rounded pretty big button", not many
+ *   elements, and never a colorful border ("cards with such borders… look really weird"). This is how
+ *   canvases interconnect without duplicating each other's screens.
  *
  * WHY THIS IS A SIBLING OF `CanvasFrame` AND NOT A BRANCH INSIDE IT. The frame component is thirteen hundred
  * lines that all exist to serve a picture: the shot, its claims, the Open button, the annotation layer. An
@@ -33,7 +36,7 @@
  * the rendered chrome against the declaration.
  */
 
-import { EXPLAIN_SIZE } from "./graph-layout";
+import { BOUNDARY_SIZE, EXPLAIN_SIZE } from "./graph-layout";
 import type { CanvasScreen } from "./types";
 
 /** Matches the frame chrome's type scale: the name at caption size, the body a step down. */
@@ -44,8 +47,6 @@ const BODY_SIZE = 23;
 const EDGE_OUTSIDE = "hsl(0 0% 100% / 0.28)";
 /** The in-product tint: the canvas accent family, still dashed — ours, but still not a picture. */
 const EDGE_PRODUCT = "hsl(187 65% 55% / 0.55)";
-/** The boundary ring: solid, same tint — the step is real and captured, just filed in another canvas. */
-const EDGE_BOUNDARY = "hsl(187 65% 55% / 0.7)";
 
 /** "canvas:orders" → "orders"; anything else → null. Unknown values fall back to the outside chrome. */
 function boundarySlug(kind: string | undefined): string | null {
@@ -68,25 +69,66 @@ export function CanvasExplain({ screen }: { screen: CanvasScreen }) {
   const slug = boundarySlug(kind);
   const inProduct = kind === "product";
 
-  const border = slug
-    ? `2px solid ${EDGE_BOUNDARY}`
-    : `2px dashed ${inProduct ? EDGE_PRODUCT : EDGE_OUTSIDE}`;
-  const background = slug
-    ? "hsl(190 22% 15%)"
-    : inProduct
-      ? "hsl(190 18% 15%)"
-      : "hsl(192 12% 17%)";
+  /* THE BOUNDARY CARD: the dark panels inverted. White card, dark text, NO border (the card's own
+     lightness against the dark stage is the whole ring it needs), and one big fully rounded button.
+     Title, body, button — nothing else. */
+  if (slug) {
+    return (
+      <figure
+        data-canvas-explain={screen.id}
+        data-canvas-explain-kind="canvas"
+        className="relative m-0 flex flex-col gap-4 rounded-[14px] px-7 py-6"
+        style={{
+          width: BOUNDARY_SIZE.w,
+          height: BOUNDARY_SIZE.h,
+          background: "hsl(0 0% 97%)",
+        }}
+      >
+        <figcaption
+          className="font-semibold"
+          style={{ fontSize: TITLE_SIZE, lineHeight: 1.25, color: "hsl(200 15% 12%)" }}
+        >
+          {screen.label}
+        </figcaption>
+        <p
+          className="m-0 overflow-hidden"
+          style={{ fontSize: BODY_SIZE, lineHeight: 1.45, color: "hsl(200 8% 38%)" }}
+        >
+          {screen.explain}
+        </p>
+        {/**
+         * The live interconnection: the served canvas route. `data-canvas-chrome` is load-bearing —
+         * the surface's pan handler captures every pointer that is not on chrome, which is why the
+         * first version of this link LOOKED clickable and did nothing. A missing target 404s until
+         * the other canvas exists.
+         */}
+        <a
+          href={`/design-canvas/${slug}`}
+          title={`The ${slugTitle(slug)} canvas`}
+          data-canvas-chrome=""
+          className="mt-auto flex items-center justify-center self-start rounded-full font-semibold text-white"
+          style={{
+            fontSize: BODY_SIZE,
+            background: "hsl(200 15% 12%)",
+            padding: "14px 34px",
+          }}
+        >
+          Open Canvas
+        </a>
+      </figure>
+    );
+  }
 
   return (
     <figure
       data-canvas-explain={screen.id}
-      data-canvas-explain-kind={slug ? "canvas" : inProduct ? "product" : "outside"}
+      data-canvas-explain-kind={inProduct ? "product" : "outside"}
       className="relative m-0 flex flex-col gap-4 rounded-[14px] px-7 py-6"
       style={{
         width: EXPLAIN_SIZE.w,
         height: EXPLAIN_SIZE.h,
-        border,
-        background,
+        border: `2px dashed ${inProduct ? EDGE_PRODUCT : EDGE_OUTSIDE}`,
+        background: inProduct ? "hsl(190 18% 15%)" : "hsl(192 12% 17%)",
       }}
     >
       <figcaption
@@ -101,34 +143,15 @@ export function CanvasExplain({ screen }: { screen: CanvasScreen }) {
       >
         {screen.explain}
       </p>
-      {slug ? (
-        <span
-          className="mt-auto flex items-baseline justify-between gap-4"
-          style={{ fontSize: BODY_SIZE - 4 }}
-        >
-          <span style={{ color: "hsl(187 55% 62% / 0.85)" }}>
-            Continues in the {slugTitle(slug)} canvas
-          </span>
-          {/* Live interconnection: the served canvas route. A missing target simply 404s until it exists. */}
-          <a
-            href={`/design-canvas/${slug}`}
-            className="shrink-0 font-semibold underline underline-offset-4"
-            style={{ color: "hsl(187 65% 68%)" }}
-          >
-            Open canvas
-          </a>
-        </span>
-      ) : (
-        <span
-          className="mt-auto"
-          style={{
-            fontSize: BODY_SIZE - 4,
-            color: inProduct ? "hsl(187 45% 60% / 0.75)" : "hsl(0 0% 100% / 0.35)",
-          }}
-        >
-          {inProduct ? "In this product, not capturable from here" : "Outside this app"}
-        </span>
-      )}
+      <span
+        className="mt-auto"
+        style={{
+          fontSize: BODY_SIZE - 4,
+          color: inProduct ? "hsl(187 45% 60% / 0.75)" : "hsl(0 0% 100% / 0.35)",
+        }}
+      >
+        {inProduct ? "In this product, not capturable from here" : "Outside this app"}
+      </span>
     </figure>
   );
 }

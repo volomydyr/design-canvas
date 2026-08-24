@@ -119,8 +119,8 @@ oracle fails a panel whose rendered kind differs from the declared one):
 // Ours, in this product's flow, but not capturable from this repo (another repository, an email, the
 // mobile app). Tinted dashed panel, "In this product, not capturable from here".
 { id: "buyer-order-page", label: "Buyer Order Status Page", explain: "…", explainKind: "product" },
-// A BOUNDARY NODE: the step continues in another canvas of this project. Solid tinted panel,
-// "Continues in the Quotes canvas" + a live "Open canvas" link. In-app crossings only.
+// A BOUNDARY NODE: the step continues in another canvas of this project. A white card with dark
+// text (the dark panels' inverse), one big rounded "Open Canvas" button. In-app crossings only.
 { id: "quote-complete", label: "Complete Order in Quotes", explain: "…", explainKind: "canvas:quotes" },
 ```
 
@@ -205,19 +205,29 @@ the owner's instruction, not a layout accident:
 > "user flows don't need titles about screens. they need interaction explanation over the arrows, making it
 > clear what has happened."
 
+**A user flow is connected by ACTIONS, and the oracle holds every flow to it.** The owner's definition:
+"If the user does this, they see this. If the user does this, they see that." A "flow" that is a linear
+chain of screens joined only by `When …` conditions is a set of STATES — and states, variants and
+versions are what grouped screens exist for. Showing the same set in both tabs erases the reason the two
+tabs are separate. So every flow that draws edges must hold at least one action edge (a verb from the
+closed list other than `When`); condition edges stay legal as branches of a journey, they just cannot be
+the whole of one. `check-canvas.mjs` fails a flow with no action edge.
+
 **Where on the screen the move starts: `origin`.** An action edge can additionally say WHERE the press
 lives, by naming the control's exact visible text (`origin: "Mark as Shipped"`) or, prefixed `css=`, a
 selector for a control with no text of its own. The declaration only names it — the CAPTURE measures it:
 the spec is resolved on the live page into a rectangle written into the manifest, and a spec that resolves
 to nothing or to more than one visible place **fails the capture the way a missed claim does**, so a
 region can never quietly drift away from its control. On the flows view the measured regions appear
-behind an **Origins toggle that rests off** (several tinted rings per frame read as overload on a simple
-flow); switched on, each region is a numbered ring paired with its edge's label chip, hovering either
-lights both, and the edge is re-drawn out of the ring's border so the arrow itself points at the control.
+behind a **press-origins toggle in the zoom bar that rests off** (several highlights per frame read as
+overload on a simple flow); switched on, each region is a vivid orange highlight and its edge is re-drawn
+out of the highlight's border in the same orange — one line from the pressed control to the screen it
+opens, which is the whole pairing. No numbers and no hover effects, both retired on the owner's feedback.
+Orange because blue (review queue), green (answered pins) and red (failures) already mean other things.
 Origins belong on press edges whose control is visible in the picture — a condition edge (`When …`) has
 no origin, and an explanation frame cannot own one. The oracle verifies every declared origin was
-measured, every measurement is still declared, and one press of the toggle draws exactly one ring per
-measurement.
+measured, every measurement is still declared, and one press of the toggle draws exactly one highlight
+per measurement.
 
 ## Explorations, while a question is open
 
