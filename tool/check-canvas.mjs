@@ -226,6 +226,11 @@ for (const problem of checkCanvasCopy({
  */
 const explainScreens = screens.filter((screen) => screen.explain);
 const explainIds = new Set(explainScreens.map((screen) => screen.id));
+/* The ids whose `kind` was CLAIMED as able to stand alone. Built here, from the served declaration,
+   because `group.screens` below is a list of IDS and carries no fields of its own. */
+const soloKindIds = new Set(
+  screens.filter((screen) => screen.soloKind).map((screen) => screen.id),
+);
 for (const screen of screens) {
   if (screen.explain) {
     if (screen.url)
@@ -1406,10 +1411,15 @@ for (const mode of views) {
    */
   if (mode !== "explore")
     /* Counted on REAL frames: a flow of one screen and one explanation panel is still a flow of one. */
-    for (const group of groups.filter((one) => real(one).length < 2))
+    for (const group of groups.filter((one) => real(one).length < 2)) {
+      /* …unless the declaration CLAIMED it. `soloKind` is the author saying there is no existing
+         section this frame could have joined, which is the one thing this check cannot work out for
+         itself. A kind nobody claimed is still the declaration mistake it always was. */
+      if (mode === "kinds" && real(group).every((id) => soloKindIds.has(id))) continue;
       failures.push(
         `${mode}: "${group.title}" is a group of ${real(group).length}, which is not a group`,
       );
+    }
   console.log(
     `${mode}: ${groups.length} groups, ${total} frames, smallest ${Math.min(
       ...groups.map((group) => group.screens.length),

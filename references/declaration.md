@@ -73,10 +73,20 @@ box a cover goes in and a word the product's UI never used once: _"the language 
 what does the slot mean? We never used such words anywhere."_ Before writing a label, check the word appears
 in the product itself.
 
-**A group of one is not a group.** Every `kind` must hold at least two screens; a heading over one frame is
+**A group of one is not a group.** Every `kind` should hold at least two screens; a heading over one frame is
 a frame with a heading on it. `check-canvas.mjs` fails on it. Do not sweep the leftovers into a bucket
 called "Other" either — that is a heading over things that have nothing to do with each other. The order of
 the groups is the declaration's order, so the kinds run in the same sequence as the journeys do.
+
+**Unless the subject has no other section, and then you say so with `soloKind: true`.** The rule above is
+aimed at a frame that was filed apart from a section it belonged in. When nothing else on the canvas is
+about that subject, a section of one is honest and the alternative is worse: padding it with a near-duplicate
+of the same screen. The owner, 2026-08-24, on an Organization settings group of one: _"the oracle should
+fail when you have similar screens but for some reason you decide to put one in a separate section just WITH
+THIS ONE screen, even though it could easily be a part of the existing section. in this situation there's no
+other existing section about the org settings. otherwise you need a better screens than just the same one
+with only avatar uploaded."_ The check cannot judge "could have joined" on its own, so the declaration
+claims it. A solo group nobody claimed still fails.
 
 ## A step the app cannot show: the explanation frame
 

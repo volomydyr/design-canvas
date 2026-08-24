@@ -163,6 +163,10 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             view,
             /* Which section it was filed under. Served so the oracle can hold it against `kinds` above. */
             kind: screen.kind ?? null,
+            /* Whether that section may stand alone. Served for the same reason as `kind`: the oracle
+               reads the SERVED declaration, so a field left out of this projection is a field the
+               check can never see. */
+            soloKind: screen.soloKind ?? false,
             /* The line under the frame. Served for the copy checker; nothing else downstream reads it. */
             note: screen.note,
             /* Null on an explanation frame: nothing to visit, nothing to capture. */

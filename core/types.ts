@@ -64,6 +64,19 @@ export type CanvasScreen = {
   /** Groups this screen in the by-kind view, where flow order is dropped. */
   kind?: string;
   /**
+   * This screen's `kind` MAY stand alone. Off by default, because a lone kind is usually a screen
+   * that belonged in a section that already existed, and the oracle should catch that.
+   *
+   * The check cannot tell the two apart on its own: whether a frame "could have joined an existing
+   * section" is a judgement about the other sections, and only the author holds it. The owner,
+   * 2026-08-24, on an Organization settings group of one: _"the oracle should fail when you have
+   * similar screens but for some reason you decide to put one in a separate section just WITH THIS
+   * ONE screen, even though it could easily be a part of the existing section. in this situation
+   * there's no other existing section about the org settings."_ So the declaration says it out
+   * loud, and a solo group stays a failure everywhere it was not claimed.
+   */
+  soloKind?: boolean;
+  /**
    * DRAWN IN THE USER FLOWS ONLY, and left out of the grouped screens.
    *
    * A journey has states a jeweler rarely meets: nothing named yet, an organization that already has
