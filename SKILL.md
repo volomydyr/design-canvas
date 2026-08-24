@@ -101,6 +101,13 @@ entry with five directions, round two REPLACES it with three variants of whichev
 with TODAY'S DESIGN as its first frame (`original`, required) — six frames in a five-direction round: the
 reference, then options 1 to 5.
 
+**AN OPTION IS A JOURNEY WHEN ITS DESIGN DEMANDS ONE.** A direction built on progressive disclosure is a flow
+of screens — honestly 5-10+ for one option — declared with `under` (see references/declaration.md) and never
+squeezed into a single frame. The owner's layout rule, verbatim: _"if the design requires just one screen per
+option then you show them as 5 screens horizontally. but if it requires more… then you put it as 5 groups of
+screens vertically, each of which has its own screens placed horizontally."_ The layout switches shape by
+itself; the declaration only says which screens belong to which option, in step order.
+
 ### The two rules that decide whether it is an exploration at all
 
 **1. DIFFERENT PATTERNS, NOT SETTINGS OF ONE COMPONENT.** A round where every frame is the same component with

@@ -134,21 +134,29 @@ export type CanvasScreen = {
    */
   explainKind?: string;
   /**
-   * IN AN EXPLORATION: this frame SUPPORTS the direction with that id, and is drawn under it.
+   * IN AN EXPLORATION: this frame is a LATER STEP of the option with that id. An option's screens — the
+   * option itself, then everything `under` it, in declared order — are ITS FLOW.
    *
-   * One frame per direction was not enough to judge one. A direction whose whole point is a tab that is one click
-   * away has to show the tab BOTH shut and open, or the reviewer is asked to imagine half of it — the owner, on
-   * the first round: *"it looks like it's not enough to show one screen, right? for each option like you're not
-   * providing me with enough context. like for example you're showing a menu but you not showing the tab that you
-   * need to literally show me. So maybe if the exploration requires more screenshots than one, it's okay. just put
-   * them under the main exploration screen."*
+   * One frame per option was not enough to judge one. First for context — a direction whose whole point is a
+   * tab that is one click away has to show the tab BOTH shut and open, or the reviewer is asked to imagine
+   * half of it — the owner, on the first round: *"it looks like it's not enough to show one screen, right? for
+   * each option like you're not providing me with enough context. like for example you're showing a menu but
+   * you not showing the tab that you need to literally show me. So maybe if the exploration requires more
+   * screenshots than one, it's okay. just put them under the main exploration screen."* Then for real: an
+   * option built on progressive disclosure IS a journey of screens, and squeezing it into one frame was
+   * rejected whole — *"how the fuck are you supposed to explain a suggested option for redesigning [a
+   * settings page] showing just ONE screen?"* One option can honestly be a flow of 5-10+ screens.
    *
-   * So a direction is a COLUMN: its main frame on top, its supporting frames beneath, and the next direction
-   * beside it. Only the main frame is numbered and only the main frame carries a verdict, because a like or a
-   * dislike is about the direction and not about one of its pictures.
+   * HOW IT DRAWS — the owner's layout rule, verbatim: *"if the design requires just one screen per option then
+   * you show them as 5 screens horizontally. but if it requires more… then you put it as 5 groups of screens
+   * vertically, each of which has its own screens placed horizontally."* So when every option is one screen,
+   * the panel is one horizontal row; when any option has steps, each option becomes a ROW of its screens in
+   * step order, and the rows stack. Only the option's first frame is numbered and only it carries a verdict,
+   * because a like or a dislike is about the option and not about one of its steps.
    *
-   * Ignored outside the exploration view. A supporting frame is captured, commented on and claimed exactly like
-   * any other, and its `label` should say what it adds ("the tab open"), not repeat the direction's name.
+   * Ignored outside the exploration view. A step frame is captured, commented on and claimed exactly like any
+   * other, and its `label` should name the step ("Choose the reason", "the tab open"), not repeat the option's
+   * name.
    */
   under?: string;
   /**
@@ -453,11 +461,13 @@ export type CanvasExploration = {
    */
   original?: string;
   /**
-   * One screen per direction under comparison, IN THE ORDER THEY ARE NUMBERED.
+   * The options under comparison, IN THE ORDER THEY ARE NUMBERED — plus, after any option, the later steps
+   * of its flow, each marked `under: "<option-id>"` (see `CanvasScreen.under`). An option is one screen when
+   * one is enough and a whole journey when its design demands one.
    *
-   * The canvas draws 1, 2, 3 on them from this order, because a reviewer says "number three" out loud and a
-   * name they have to read off a frame is not something anyone says. Each screen's `note` is what makes it
-   * DIFFERENT from its neighbours — not what it is, which the surface above already said.
+   * The canvas draws 1, 2, 3 on the options from this order, because a reviewer says "number three" out loud
+   * and a name they have to read off a frame is not something anyone says. Each option's `note` is what makes
+   * it DIFFERENT from its neighbours — not what it is, which the surface above already said.
    */
   screens: CanvasScreen[];
 };

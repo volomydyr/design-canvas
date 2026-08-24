@@ -108,11 +108,11 @@ export type LaidOutNode = {
   h: number;
   rank: number;
   row: number;
-  /** Exploration only: this direction's spoken number, 1-based. Absent on the incumbent and on supporters. */
+  /** Exploration only: this option's spoken number, 1-based. Absent on the incumbent and on an option's later steps. */
   option?: number;
   /** Exploration only: the panel's first frame is TODAY'S design, drawn as reference. See `CanvasExploration.original`. */
   incumbent?: boolean;
-  /** Exploration only: a frame drawn UNDER a direction rather than being one. See `CanvasScreen.under`. */
+  /** Exploration only: a later STEP of an option's flow rather than an option of its own. See `CanvasScreen.under`. */
   supporting?: boolean;
   /** Flows only: this node is an explanation panel, not a picture. See `CanvasScreen.explain`. */
   explain?: boolean;
@@ -946,11 +946,12 @@ export function layoutKinds(
 }
 
 /**
- * THE EXPLORATION VIEW: one panel per question, one frame per direction, side by side.
+ * THE EXPLORATION VIEW: one panel per question, the options side by side — or, when an option is a flow of
+ * several screens, one row per option, stacked. The shape rule lives at the placement below.
  *
- * Deliberately the same shape as `layoutKinds` — a titled panel holding a row of frames — because the job is
+ * Deliberately the same shape as `layoutKinds` — a titled panel holding rows of frames — because the job is
  * the same job. Options are judged by being next to each other at a size where they can actually be read,
- * which is what a row of full-size frames on a pannable surface is for, and what a grid of thumbnails is not.
+ * which is what full-size frames on a pannable surface are for, and what a grid of thumbnails is not.
  *
  * NO EDGES, EVER. Directions are alternatives: an arrow between two of them would say a person can move from
  * one to the other, and only one of them will ever exist. The panel says "these are answers to one
@@ -977,19 +978,26 @@ export function layoutExplorations(
        with it, and so did the verdict buttons on a lone option. */
 
     /**
-     * ONE COLUMN PER DIRECTION: its main frame, then whatever supports it, stacked under it.
+     * TWO SHAPES, AND THE OPTIONS' OWN SCREEN COUNT PICKS BETWEEN THEM. The owner's rule, verbatim: *"if the
+     * design requires just one screen per option then you show them as 5 screens horizontally. but if it
+     * requires more… then you put it as 5 groups of screens vertically, each of which has its own screens
+     * placed horizontally."*
      *
-     * A direction is what gets compared, and some directions need more than one picture to be understood — see
-     * `CanvasScreen.under`. So the row is a row of COLUMNS: the mains line up along the top, where they can be
-     * read against each other, and each column grows downwards on its own.
+     * An option's screens are ITS FLOW, in declared order — see `CanvasScreen.under`. When every option is one
+     * screen, the panel is ONE ROW: the incumbent, then options 1..N side by side, where they can be read
+     * against each other. The moment any option needs more than one screen, the panel becomes VERTICAL GROUPS:
+     * the incumbent alone on the first row, then one row per option, that option's screens running left to
+     * right in step order. Options are compared by scanning DOWN; an option's journey is read ACROSS. The old
+     * shape — extra pictures stacked in a column UNDER their option — did not survive a real multi-screen
+     * round: a flow drawn downward reads as variants of one screen, not as steps of one design.
      */
     const mains = exploration.screens.filter((screen) => !screen.under);
-    const supportersOf = (id: string) =>
+    const stepsOf = (id: string) =>
       exploration.screens.filter((screen) => screen.under === id);
     for (const screen of exploration.screens)
       if (screen.under && !mains.some((main) => main.id === screen.under))
         problems.push(
-          `exploration ${exploration.id}: "${screen.id}" sits under "${screen.under}", which is not a direction in it`,
+          `exploration ${exploration.id}: "${screen.id}" sits under "${screen.under}", which is not an option in it`,
         );
 
     /**
@@ -1013,56 +1021,80 @@ export function layoutExplorations(
         `exploration ${exploration.id}: no original — every panel opens with today's design as its first frame`,
       );
 
-    let x = 0;
     const top = originY + TITLE_SPACE + CAPTION_SPACE;
-    let tallest = 0;
     const nodes: LaidOutNode[] = [];
-    const columns: { screen: CanvasScreen; incumbent: boolean }[] = [
-      ...(originalScreen ? [{ screen: originalScreen, incumbent: true }] : []),
-      ...mains.map((screen) => ({ screen, incumbent: false })),
+    const rows: { screens: CanvasScreen[]; incumbent: boolean }[] = [
+      ...(originalScreen
+        ? [{ screens: [originalScreen], incumbent: true }]
+        : []),
+      ...mains.map((main) => ({
+        screens: [main, ...stepsOf(main.id)],
+        incumbent: false,
+      })),
     ];
+    const multiScreen = rows.some((row) => row.screens.length > 1);
     let optionNumber = 0;
-    columns.forEach(({ screen: main, incumbent }, index) => {
-      const size = frameSize(main, declaration, captured);
-      nodes.push({
-        screen: main,
-        group: { id: exploration.id, title: exploration.title },
-        x,
-        y: top,
-        w: size.w,
-        h: size.h,
-        rank: index,
-        row: 0,
-        /* The spoken number belongs to the OPTIONS: the incumbent is what "number three" departs from. */
-        option: incumbent ? undefined : ++optionNumber,
-        incumbent: incumbent || undefined,
-      });
-      /* The column's own width is the widest thing in it, so the next direction never lands on this one. */
-      let columnW = Math.max(size.w, chromeWidth(main, declaration, captured));
-      let y = top + size.h + FOOT_SPACE + CAPTION_SPACE;
-      supportersOf(main.id).forEach((support, depth) => {
-        const supportSize = frameSize(support, declaration, captured);
+    let panelW = 0;
+    let panelH = 0;
+
+    if (!multiScreen) {
+      /* One screen per option, so ONE ROW: the incumbent, then the options, side by side. */
+      let x = 0;
+      rows.forEach(({ screens: rowScreens, incumbent }, index) => {
+        const screen = rowScreens[0];
+        const size = frameSize(screen, declaration, captured);
         nodes.push({
-          screen: support,
+          screen,
           group: { id: exploration.id, title: exploration.title },
           x,
-          y,
-          w: supportSize.w,
-          h: supportSize.h,
+          y: top,
+          w: size.w,
+          h: size.h,
           rank: index,
-          row: depth + 1,
-          supporting: true,
+          row: 0,
+          /* The spoken number belongs to the OPTIONS: the incumbent is what "number three" departs from. */
+          option: incumbent ? undefined : ++optionNumber,
+          incumbent: incumbent || undefined,
         });
-        columnW = Math.max(
-          columnW,
-          supportSize.w,
-          chromeWidth(support, declaration, captured),
-        );
-        y += supportSize.h + FOOT_SPACE + CAPTION_SPACE;
+        x += Math.max(size.w, chromeWidth(screen, declaration, captured)) + KIND_GAP;
+        panelH = Math.max(panelH, size.h);
       });
-      x += columnW + KIND_GAP;
-      tallest = Math.max(tallest, y - FOOT_SPACE - CAPTION_SPACE - top);
-    });
+      panelW = Math.max(0, x - KIND_GAP);
+    } else {
+      /* Some option needs more than one screen, so VERTICAL GROUPS: the incumbent's row first and alone,
+         then one row per option, its screens running left to right in step order. */
+      let y = top;
+      rows.forEach(({ screens: rowScreens, incumbent }, rowIndex) => {
+        let x = 0;
+        let rowH = 0;
+        const number = incumbent ? undefined : ++optionNumber;
+        rowScreens.forEach((screen, step) => {
+          const size = frameSize(screen, declaration, captured);
+          nodes.push({
+            screen,
+            group: { id: exploration.id, title: exploration.title },
+            x,
+            y,
+            w: size.w,
+            h: size.h,
+            rank: rowIndex,
+            row: rowIndex,
+            /* The number and the verdict live on the row's FIRST frame only: a like is about the option,
+               and the frames after the first are its steps, never candidates of their own. */
+            option: step === 0 ? number : undefined,
+            incumbent: (step === 0 && incumbent) || undefined,
+            supporting: step > 0 || undefined,
+          });
+          x +=
+            Math.max(size.w, chromeWidth(screen, declaration, captured)) +
+            KIND_GAP;
+          rowH = Math.max(rowH, size.h);
+        });
+        panelW = Math.max(panelW, x - KIND_GAP);
+        y += rowH + FOOT_SPACE + CAPTION_SPACE;
+      });
+      panelH = y - FOOT_SPACE - CAPTION_SPACE - top;
+    }
 
     groups.push({
       id: `explore-${exploration.id}`,
@@ -1083,11 +1115,11 @@ export function layoutExplorations(
         x: 0,
         y: originY,
         /* The wider of the two: the frames inside, or the heading over them. */
-        w: atLeastTitleWide(Math.max(0, x - KIND_GAP), exploration.surface),
-        h: top + tallest + FOOT_SPACE - originY,
+        w: atLeastTitleWide(panelW, exploration.surface),
+        h: top + panelH + FOOT_SPACE - originY,
       },
     });
-    originY = top + tallest + FOOT_SPACE + FLOW_GAP;
+    originY = top + panelH + FOOT_SPACE + FLOW_GAP;
   }
 
   return { groups, box: totalBox(groups), problems };

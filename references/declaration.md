@@ -124,22 +124,30 @@ oracle fails a panel whose rendered kind differs from the declared one):
 { id: "quote-complete", label: "Complete Order in Quotes", explain: "…", explainKind: "canvas:quotes" },
 ```
 
-## A direction that needs more than one picture
+## An option that needs more than one screen
 
-One frame per direction is usually right, and sometimes it is not enough to judge one: a direction whose point is a
-tab one click away has to show that tab shut AND open, or the reviewer is asked to imagine half of it. So a screen
-can say it supports a direction, and the exploration draws it underneath:
+One frame per option is usually right, and it stops being right the moment the option's whole idea needs more: a
+direction whose point is a tab one click away has to show that tab shut AND open, and a direction built on
+progressive disclosure IS a journey — a wizard, a drill-in, a split flow can honestly be 5-10+ screens as ONE
+option. Never squeeze a journey into one frame to fit the layout; declare the steps. A screen says which option
+it belongs to with `under`, and the option's screens — itself, then everything under it, in declared order —
+are its flow:
 
 ```ts
-{ id: "x-tab", label: "A tab in the picker", route: "…&explore=shelf-tab" },
-{ id: "x-tab-open", label: "…with the tab open", route: "…&explore=shelf-tab&tab=store",
-  under: "x-tab" },
+{ id: "x-wizard", label: "A guided setup", route: "…&explore=wizard" },
+{ id: "x-wizard-2", label: "Choose the plan", route: "…&explore=wizard&step=2",
+  under: "x-wizard" },
+{ id: "x-wizard-3", label: "Confirm and finish", route: "…&explore=wizard&step=3",
+  under: "x-wizard" },
 ```
 
-Each direction becomes a COLUMN: the main frame on top, its supporting frames stacked beneath, the next direction
-beside it. Only the main frame is numbered, and only the main frame carries the like and dislike, because a verdict
-is about the direction rather than about one of its pictures. A supporting frame's `label` should say what it adds
-("the tab open"), never repeat the direction's name.
+How it draws is the owner's rule, verbatim: _"if the design requires just one screen per option then you show
+them as 5 screens horizontally. but if it requires more… then you put it as 5 groups of screens vertically, each
+of which has its own screens placed horizontally."_ One screen per option keeps the single row. Any option with
+steps turns the panel into stacked rows — today's design first and alone, then one row per option, its screens
+reading left to right in step order. Only the option's first frame is numbered, and only it carries the like and
+dislike, because a verdict is about the option rather than about one of its steps. A step's `label` names the
+step ("Choose the plan", "the tab open"), never repeats the option's name.
 
 ## A set to compare, not a journey
 

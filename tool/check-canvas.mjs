@@ -227,6 +227,25 @@ for (const exploration of explorations) {
 }
 
 /**
+ * EVERY STEP BELONGS TO AN OPTION IN ITS OWN PANEL. `under` names the option whose flow this screen is a
+ * step of, and that option must be a screen of the SAME exploration that is not itself a step — a step
+ * under another panel's option, a flow screen, or another step draws nowhere the reviewer can find it.
+ * The layout reports the orphan as a problem; a declaration mistake is a failure, so it is one here too.
+ */
+for (const exploration of explorations) {
+  const options = new Set(
+    (exploration.screens ?? [])
+      .filter((screen) => !screen.under)
+      .map((screen) => screen.id),
+  );
+  for (const screen of exploration.screens ?? [])
+    if (screen.under && !options.has(screen.under))
+      failures.push(
+        `exploration ${exploration.id}: "${screen.id}" sits under "${screen.under}", which is not an option in that panel`,
+      );
+}
+
+/**
  * EVERY WORD THIS CANVAS DRAWS, HELD TO ONE STANDARD — see `copy-rules.mjs` for what the standard is and why.
  *
  * A FAILURE rather than a note, unlike the size check beside it. A canvas that is too big is a judgment call; a
@@ -1481,9 +1500,10 @@ for (const mode of views) {
     0,
   );
   /* Per view: the flow view holds the journeys, the grouped view holds those plus every comparison set, and the
-     exploration tab holds the directions PLUS one incumbent frame per panel — today's design opens each one. */
-  const incumbentsDrawn = onDevice.filter((screen) =>
-    explorations.some((exploration) => exploration.original === screen.id),
+     exploration tab holds the directions PLUS one incumbent frame per panel — today's design opens each one.
+     Counted per PANEL, not per screen: two panels redesigning the same screen draw its frame twice. */
+  const incumbentsDrawn = explorations.filter((exploration) =>
+    onDevice.some((screen) => screen.id === exploration.original),
   ).length;
   const expected =
     mode === "explore"

@@ -173,6 +173,12 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             id: one.id,
             original: one.original ?? null,
             directions: one.screens.filter((screen) => !screen.under).length,
+            /* Each screen's `under`, so the oracle can hold every step to an option in the SAME panel —
+               the layout reports the orphan as a problem; the oracle makes it a failure. */
+            screens: one.screens.map((screen) => ({
+              id: screen.id,
+              under: screen.under ?? null,
+            })),
           })),
           /* Canvas-wide forbidden text (overlay tripwire) — served, or the capture never hears of it. */
           forbid: declaration.forbid ?? [],
