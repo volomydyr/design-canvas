@@ -733,7 +733,27 @@ export async function DELETE(request: Request) {
      offers it because a reviewer should never have to wonder whether this tool is accumulating files in their
      repository — the answer is that they can empty it, and that it was gitignored the whole time. */
   if (params.get("all") === "1") {
-    await fs.rm(paths.images, { recursive: true, force: true });
+    /**
+     * THIS CANVAS'S PICTURES, NEVER A DIRECTORY SOMEBODY ELSE IS IN.
+     *
+     * `fs.rm(paths.images, { recursive: true })` is right for the namespaced layout, where `images` is
+     * `comments/<slug>/` and belongs to one canvas — and WRONG for the flat fallback, where `images`
+     * resolves to the SHARED `comments/` directory that every canvas's pictures sit in. On a project
+     * still using that fallback, one canvas's Clear All took every other canvas's images with it. A
+     * background security review walked this exact path and wrote "not reported"; the 2026-08-31
+     * digest found that note and this is the fix.
+     *
+     * The pictures are removed one at a time, from this canvas's own records, in both layouts. The
+     * namespaced folder is then removed because it is now empty and belongs to nobody else; the shared
+     * one is left standing, which is the entire point.
+     */
+    const owned = ((await readFile(paths)).comments ?? [])
+      .map((comment) => imagePath(paths, comment.id))
+      .filter((image): image is string => Boolean(image));
+    await Promise.all(owned.map((image) => fs.rm(image, { force: true })));
+    if (paths.images !== path.join(DIR, "comments")) {
+      await fs.rm(paths.images, { recursive: true, force: true });
+    }
     return NextResponse.json(await serialized(() => writeFile(paths, [])));
   }
   /**
