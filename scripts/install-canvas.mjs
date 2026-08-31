@@ -138,6 +138,11 @@ for (const file of [
      captures, re-runs whatever flaked, and stops the server. The four-step procedure it replaces was skippable,
      and got skipped for a whole session. */
   "capture-run.mjs",
+  /* The native path. A React Native project served to Expo web renders something adjacent to the app —
+     sheets behave differently, safe areas are absent, the keyboard never appears — so frames captured
+     there picture a thing nobody ships. This photographs a booted simulator instead, and says plainly
+     that it verified no claims, because a screenshot has no DOM to read. */
+  "capture-sim.mjs",
   "check-canvas.mjs",
   /* Marking a round's comments as worked, in one command rather than one fetch each — the hand version left
      comments behind twice in one session. */

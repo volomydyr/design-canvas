@@ -781,6 +781,29 @@ is busy. By hand you get neither guarantee, so confirm the server you point at i
 produced.
 </details>
 
+### A native app: capture the simulator, not the web target
+
+For a React Native or Expo project, the browser path photographs the wrong thing. Served to Expo web the
+app renders something adjacent to itself: bottom sheets behave differently or not at all, safe areas are
+absent, the keyboard never appears, scroll momentum and haptics do not exist. Frames captured there are
+pictures of a build nobody ships, and every report about them has to carry a hand-written "web only"
+caveat, which is how mobile work ends up shipping unproven.
+
+Boot the simulator and start the app yourself — this photographs what is already running, it never
+builds or launches:
+
+```bash
+node design-canvas/dump-screens.mjs --canvas <slug> > /tmp/screens.json
+node design-canvas/capture-sim.mjs --canvas <slug> --scheme <app-url-scheme> --screens-file /tmp/screens.json
+```
+
+Each screen's `route` is appended to the app's own URL scheme, so deep links the app already supports are
+what drive it. **It verifies no claims, and says so in every frame it writes**: a screenshot has no DOM,
+so `expect` cannot be checked, stability cannot be proved by shooting twice, and broken images cannot be
+counted. Frames carry `backend: "simulator"`, `claimsVerified: false` and the declared claims as
+`claimsDeclared`, so what was NOT checked is visible to the oracle and to the reviewer. Check those by
+eye against the picture — here, eyes are the only thing that can.
+
 **`--canvas` names which canvas is being captured**, and it defaults to `main`, so a single-canvas project can
 leave it off. Every path the run touches is namespaced by it — the pictures it writes, the manifest it prunes
 orphans against, the comment file it marks stale — so a run that forgets the flag on a multi-canvas project does
