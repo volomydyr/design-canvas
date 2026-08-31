@@ -40,6 +40,15 @@ const has = (name) => argv.includes(`--${name}`);
 
 const canvas = argOf("canvas") ?? "main";
 
+/* A SLUG IS A NAME, NOT A PATH. This value is interpolated straight into a file path below and the file is
+   then read and REWRITTEN, so `--canvas ../../something` would edit outside design-canvas/comments/ — the
+   same shape that made bank.py a write primitive in the framework repo. A slug is what the installer and the
+   route already accept: lowercase, digits, dashes. */
+if (!/^[a-z0-9][a-z0-9-]*$/.test(canvas)) {
+  console.error(`refusing --canvas "${canvas}" — a canvas slug is lowercase letters, digits and dashes only.`);
+  process.exit(1);
+}
+
 /* BOTH LAYOUTS, the same two `pathsFor` serves in the route: a namespaced file for a canvas installed since slugs
    existed, and the flat one a single-canvas install still carries. */
 const candidates = [

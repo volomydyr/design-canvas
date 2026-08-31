@@ -771,6 +771,14 @@ node design-canvas/capture.mjs --canvas <slug> --url http://localhost:3055 --scr
 
 `distDir: process.env.CANVAS_BUILD_DIR || ".next"` in the project's next config is what keeps the two builds
 apart. Without it, a capture and a review cannot happen at the same time.
+
+**Doing it by hand, the trap is the SERVER rather than the build.** A `next start` left over from an earlier
+run keeps answering on the port and keeps serving the bundle it was started with, so the next capture
+photographs the PREVIOUS build while every assertion about it passes. One run that hit this produced four
+frames of a screen that had already changed and reported success. `capture-run.mjs` now refuses to reuse a
+server it did not start — `--reuse` is how you say otherwise — and moves to a free port when the default one
+is busy. By hand you get neither guarantee, so confirm the server you point at is the one your build just
+produced.
 </details>
 
 **`--canvas` names which canvas is being captured**, and it defaults to `main`, so a single-canvas project can
@@ -929,6 +937,21 @@ does not. Written from the first real round: thirteen comments left in one sitti
    By hand, one `PATCH` per comment, this has been got wrong twice — comments left undrained, and a reviewer
    looking at work he had already given. Whether the fix is good is still the reviewer's call, on the
    recaptured frame, which is what Approve and Still wrong on a stale pin are for.
+
+   **A VERDICT HE SAID OUT LOUD IS NOT IN THE FILE, AND THE NEXT ROUND IS BUILT FROM THE FILE.** Likes and
+   dislikes are comments, so a reviewer who types "keep 2, drop 4" in chat rather than clicking leaves the
+   verdict set empty — and a round generated from an empty set once brought back an option he had dropped and
+   deleted the one he had asked for by name, which reads from the outside as the tool ignoring him. So before
+   generating any round:
+
+   ```bash
+   node design-canvas/verdicts.mjs check --canvas <slug>   # exits 1 and names options with no verdict
+   node design-canvas/verdicts.mjs record --canvas <slug> --screen <id> --value dislike \
+     --said "<his exact words>"                            # a verdict given in conversation
+   ```
+
+   `record` writes the same shape the button writes, so it drains, counts and replaces identically, and it
+   refuses to write without his words: a decision stored as your paraphrase is the thing that went wrong.
 7. **Report per comment id.** The pin number is what the reviewer says out loud, so the report is "c4: here
    is what it was, here is what it is now", never a prose summary of a day's work.
 8. **After you recapture, the comments are the REVIEWER's again.** Each one you ingested is now waiting for

@@ -41,8 +41,8 @@ const argOf = (name) => {
 const has = (name) => argv.includes(`--${name}`);
 
 const canvas = argOf("canvas") ?? "main";
-/** Its own port, so the dev server on the usual one is untouched. */
-const port = Number(argOf("port") ?? 3055);
+/** Its own port, so the dev server on the usual one is untouched. Moves if that port is occupied. */
+let port = Number(argOf("port") ?? 3055);
 /** Its own build folder, for the same reason. See `distDir` in the project's next config. */
 const buildDir = argOf("build-dir") ?? ".next-canvas";
 /** How many times a screen that keeps failing is given another run of its own. */
@@ -80,7 +80,7 @@ function parts(line) {
     one.replace(/^["']|["']$/g, ""),
   );
 }
-const base = `http://localhost:${port}`;
+let base = `http://localhost:${port}`;
 
 const started = Date.now();
 const since = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
@@ -134,8 +134,46 @@ process.on("SIGINT", () => {
 
 /* ------------------------------------------------------------------ 1. the build, in its own folder */
 
-if (has("reuse") || (await up())) {
-  say(`reusing whatever is already serving ${base}`);
+/**
+ * A SERVER THIS SCRIPT DID NOT START IS NOT AUTOMATICALLY THE RIGHT ONE.
+ *
+ * `has("reuse") || (await up())` meant: anything answering on the port wins. Correct when the owner said
+ * `--reuse`, wrong every other time, because what is usually answering is the leftover from a killed run
+ * SERVING A STALE BUNDLE. One run that reused one photographed four frames of the wrong screen and read as
+ * a pass; the port then stayed unusable until it was hunted down by hand.
+ *
+ * So reuse is explicit only. If the default port is taken, the run moves to a free one instead of trusting
+ * a stranger; if the owner PINNED `--port`, that is a specific instruction and a stranger on it is worth
+ * stopping for rather than quietly working around.
+ */
+if (!has("reuse") && (await up())) {
+  if (has("port")) {
+    console.error(
+      `capture-run: something is already answering on :${port}, and this run did not start it.\n` +
+        "That is usually a leftover server from an earlier run, which would photograph a stale bundle.\n" +
+        "Stop it, choose another --port, or pass --reuse if you know that server is the one you want.",
+    );
+    process.exit(1);
+  }
+  const taken = port;
+  let moved = false;
+  for (let candidate = taken + 1; candidate <= taken + 20; candidate += 1) {
+    port = candidate;
+    base = `http://localhost:${port}`;
+    if (!(await up())) {
+      moved = true;
+      break;
+    }
+  }
+  if (!moved) {
+    console.error(`capture-run: :${taken} and the twenty ports above it are all busy.`);
+    process.exit(1);
+  }
+  say(`:${taken} is busy with a server this run did not start — using :${port} instead`);
+}
+
+if (has("reuse")) {
+  say(`reusing whatever is already serving ${base}, because --reuse says so`);
 } else {
   const code = await phase("build", async () => {
     say(`building into ${buildDir} — the dev server's build folder is not touched`);

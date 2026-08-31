@@ -158,8 +158,18 @@ const HEADING_BLOCK = 320;
  * So the target is stated as what it looks like: clearly more separation than one section has from the next,
  * without the heading floating off on its own. ~1.2x of the visible 384 is 460, plus the 88 of panel inset the
  * lift has to cross to reach the panel's edge.
+ *
+ * DERIVED FROM THE LAYOUT, NOT TYPED OUT. The paragraph above promises this clearance is "read from the layout
+ * rather than copied, and it cannot silently fall behind if that gap is ever tuned" — and then it was written
+ * out as `460 + 88`, with `FLOW_GAP` imported and never used. Tuning `FLOW_GAP` moved every section and left
+ * the heading where it was, which is the exact failure the comment says cannot happen. The arithmetic below is
+ * the same arithmetic the comment describes, so today's value is unchanged (384 * 1.2 floors to 460) and a
+ * future change to `FLOW_GAP` now carries the heading with it.
  */
-const HEADING_LIFT = HEADING_BLOCK + 460 + 88;
+const PANEL_INSET = 88;
+/* Both boxes inset their panel, so a reader sees FLOW_GAP minus two insets between two sections. */
+const VISIBLE_SECTION_GAP = FLOW_GAP - PANEL_INSET * 2;
+const HEADING_LIFT = HEADING_BLOCK + Math.floor(VISIBLE_SECTION_GAP * 1.2) + PANEL_INSET;
 /**
  * THE EXPLORATION'S HEADING, and it is the largest type the canvas draws.
  *
