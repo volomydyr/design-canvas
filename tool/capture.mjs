@@ -872,6 +872,32 @@ async function captureOne(screen, secondPass = false) {
     await page.waitForTimeout(MIN_SETTLE_MS);
 
     /**
+     * MEASURE THE LOADED DESIGN, NOT THE SKELETON. `LOADED` above is document
+     * readiness, and a page whose rows are still fetching passes it — a
+     * skeleton has no images to wait for. Deciding the frame height off that
+     * skeleton made the SAME screen come out whole-page or one-viewport
+     * depending on how fast the API answered, and occasionally blank when
+     * the growth raced hydration (found 2026-08-25: exploration frames
+     * flaked fold-cropped or 3kb-blank across otherwise identical runs).
+     * The claims are the one data-dependent wait this pipeline owns, so the
+     * height measure now waits for EVERY declared claim to be in the
+     * page — bounded, and on a miss it measures what is there, exactly as
+     * before, with the claim step still failing loudly later.
+     */
+    if (screen.expect?.length) {
+      await page
+        .waitForFunction(
+          (needles) => {
+            const text = document.body?.innerText ?? "";
+            return needles.every((needle) => text.includes(needle));
+          },
+          screen.expect,
+          { timeout: 15_000 },
+        )
+        .catch(() => undefined);
+    }
+
+    /**
      * HOW TALL THE PICTURE IS, decided by the page rather than by a list kept somewhere. A window that scrolls
      * means the design is longer than one screen; a window that does not means the surface is a fixed-height
      * one and its own insides scroll.

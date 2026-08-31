@@ -253,6 +253,41 @@ owner's, and a round that breaks it is thrown away rather than reviewed: same-co
 exploration. If the incumbent is a table, most directions must not be tables. A variations round happens only
 when he asks for one plainly.
 
+**THE SAME TEST APPLIES INSIDE A VARIATIONS ROUND, twice over.** Both of these produced a thrown-away
+round on 2026-08-25 and neither may ever happen again:
+
+- **A variation is a design idea, never a reachable state of the product.** If the surface's own
+  controls can already produce the picture — a density setting, a collapsed section, an applied
+  filter — it is not a variation, it is the existing design photographed again. Owner, on a "dense
+  table" variation that was the table's own density toggle: _"How come this is an option? … This is
+  literally a view that we already had… what is the purpose of exploration if you're showing me my
+  existing designs."_ Before declaring a variation, ask: can the reviewer reach this exact picture
+  from the incumbent with clicks alone? If yes, it is not an option.
+- **A variation re-arranges the COMPLETE surface, never a reduced copy of it.** Stripping the
+  incumbent's functionality — columns, filters, sorting, the toolbar — to make a variation easier
+  to draw is a parity violation wearing a design costume. Owner, on flow sub-tables drawn with five
+  columns and no toolbar: _"you removed way too much. The filters, the view, the sorting, all that
+  stuff, the columns in the table. It's a very stupid idea… it should never happen again."_ The
+  variation changes the arrangement; everything the surface can do stays reachable and visible.
+
+**When one round carries variations of SEVERAL parents** (three variations of each of three liked
+options), order `screens` parent by parent and name the parent in each label ("Ledger: …"). The
+panel should read as vertical groups, one row per parent — a single horizontal strip of nine frames
+hides what is a variation of what (owner feedback, 2026-08-25; until `graph-layout` draws parent
+rows, the ordering and labels carry the grouping).
+
+**A COMMENT ON A LIKED OPTION BELONGS TO ITS CARRIED VARIATION — and to every sibling.** Working a
+comment by building it into a DIFFERENT variation while the liked screen returns unchanged is not
+working it; the reviewer likes the direction AND wants the fix, together. Both dismissals on
+2026-08-25 were exactly this: tabs asked for on the liked inbox rail, built only into a sibling —
+_"Is this a fucking joke? I told you about tabs. Where are the fucking tabs?"_ — and the one sticky
+header asked for on the liked boxed ledger, built only as a separate option — _"you clearly havent
+fixed my comment."_ The rule: every variation of a liked option starts from the liked screen WITH
+its comments applied; the variations then differ beyond that shared, corrected base. Removing the
+unliked screens is part of the same advance: the moment the new round's entry replaces the old one
+and capture prunes, nothing unliked remains on the tab — never leave a judged round visible while
+building the next.
+
 - **`original` is REQUIRED: the id of the screen being redesigned, from the flows.** The panel opens with that
   frame — "Today: …", unnumbered, no verdicts — so the options are judged against the incumbent in place.
   Owner, 2026-08-24: _"it shows you six screens where the first one is the original design and the other ones
