@@ -413,6 +413,19 @@ captured and the handler is not the thing to debug.
 control on a frame is guilty until a real synthetic press proves otherwise, and "it looks right and the
 handler is correct" is not that proof.
 
+**AND `locator.click()` IS NOT THAT PROOF EITHER.** It drives the element directly, so it passes whether or not
+the pointer is being captured — which is the entire failure this trap describes. A session reported the Open
+buttons working on that basis and was told twice they were not. Prove it with `page.mouse.down()` / `.up()` at
+the control's measured centre, in three states, because the mechanism depends on the surface's drag state:
+fresh load, after a pan, after a zoom. Log `pointerdown`, `mousedown`, `mouseup` and `click`; all four on the
+control plus the side effect firing is a pass, and `mouseup`/`click` on a `div` is this bug.
+
+**A second, separate defect in the same handler, fixed 2026-09-01.** `onPointerDown` called
+`event.preventDefault()` BEFORE the `[data-canvas-chrome]` guard, so every press — including one on a frame's
+Open button or the toolbar — had its default cancelled before the guard could return. On the world that is
+invisible, because the pan then starts as intended; on the chrome it costs the press its activation behaviour.
+The guard runs first now. If you are reordering that function, keep it first.
+
 ## 19. Claims that fail only in a full run
 
 **Symptom.** A full capture reports several screens as unproved — "the page does not have 'Network interrupted',

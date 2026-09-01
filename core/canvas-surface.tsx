@@ -372,13 +372,20 @@ export const CanvasSurface = forwardRef<
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     if (locked && event.button === 0) return;
+    /* THE CHROME GUARD COMES FIRST, AND THE ORDER IS THE WHOLE POINT.
+       It used to sit BELOW the `preventDefault()` under it, so every press —
+       including a press on an Open button, a comment control or the toolbar —
+       had its default cancelled before the guard could bail out. The pan never
+       started, so the bug was invisible on the world; what it broke was the
+       chrome, where cancelling pointerdown's default costs the press its
+       activation behaviour. Reported as "order management canvas still has
+       unclickable 'open' buttons" with the hrefs themselves proven correct.
+       A press on chrome now returns untouched: no preventDefault, no pan. */
+    if ((event.target as HTMLElement).closest("[data-canvas-chrome]")) return;
     /* Belt and braces with `select-none` above: a press that lands on anything the browser considers text
        starts a selection unless the default is prevented, and `user-select` alone does not stop a drag that
        began before the style applied. */
     event.preventDefault();
-    /* The chrome is not the canvas: a press on a button, the comment rail or a tile's own controls must
-       not drag the world out from under it. */
-    if ((event.target as HTMLElement).closest("[data-canvas-chrome]")) return;
     if (event.button !== 0 && event.button !== 1) return;
     drag.current = {
       id: event.pointerId,
