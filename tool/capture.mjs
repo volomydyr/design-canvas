@@ -267,6 +267,9 @@ function stampOf(screen) {
           /* Declared interaction origins are measured at capture time, so declaring, editing or removing
              one has to re-run the capture that measures it. */
           screen.origins?.length ? screen.origins : null,
+          /* `oneViewport` decides the frame's HEIGHT, so setting or clearing it has to recapture that
+             screen — otherwise a 4,315px printout sits under a declaration that now asks for one screen. */
+          screen.oneViewport ?? null,
         ]),
       )
       .digest("hex")
@@ -957,7 +960,16 @@ async function captureOne(screen, secondPass = false) {
       }
       return { doc: document.documentElement.scrollHeight, inner, innerPinned };
     }, shotViewport.h);
-    const pageHeight = Math.max(scrolls.doc, shotViewport.h + scrolls.inner);
+    /* `oneViewport` DECLINES THE INNER-SCROLLER GROWTH, and only that. A data
+       table's scroller is sized to the viewport and its rows are reached inside
+       the frame's own Open destination, so growing the window turns a page that
+       IS one screen into a printout of fifty rows — measured at 4,315px on a
+       page whose document was 900px. The document's own height still decides:
+       a screen that genuinely runs past the fold is still photographed whole,
+       so the flag cannot hide real content below the viewport. */
+    const pageHeight = screen.oneViewport
+      ? scrolls.doc
+      : Math.max(scrolls.doc, shotViewport.h + scrolls.inner);
     let wholePage =
       CAPTURE_WHOLE_PAGES && pageHeight > shotViewport.h * LONG_PAGE_SLACK;
     let shotH = wholePage ? Math.min(pageHeight, MAX_PAGE_H) : shotViewport.h;

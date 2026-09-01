@@ -218,6 +218,30 @@ export type CanvasScreen = {
    */
   animated?: boolean;
   /**
+   * THIS PAGE'S INNER SCROLLER IS THE DESIGN, so photograph ONE VIEWPORT and stop.
+   *
+   * The capture decides height from the page: it grows the window to open an inner scroller, because on a
+   * surface with a side panel or a long form the content genuinely continues below the fold and a
+   * one-viewport frame would hide the design. On a DATA TABLE that reasoning inverts. The table's scroller
+   * is sized to the viewport by definition, its rows are reached by scrolling inside the frame's own Open
+   * destination, and it carries pagination saying how many more there are — so growing the window turns a
+   * page that IS one screen into a printout of fifty rows.
+   *
+   * Measured on the run this came from: a quotes list whose document was 900px and whose table scroller was
+   * 3,415px photographed at 4,315px, most of it rows nobody asked to see. Owner: *"for the screenshot of the
+   * quote page, you can use a typical height. There is no need to like screenshot all 100 items. something
+   * like 900 pixels is a good height."*
+   *
+   * WHY A FLAG RATHER THAN A HEURISTIC. The tool cannot tell a table's scroller from a form's by measuring
+   * one — both are a bounded box with content past its edge — and the previous attempt at a third heuristic
+   * for "long for no reason" is recorded in the traps as the thing that had to be replaced by checking
+   * reality. The declaration knows which surface it is pointing at, so the declaration says so.
+   *
+   * It does NOT change the viewport, so `check-canvas.mjs` still refuses a padded height-only override; it
+   * only declines the GROWTH. Everything else is unchanged: claims, the blank floor, image checks, stability.
+   */
+  oneViewport?: boolean;
+  /**
    * PRESERVED HISTORY: this state no longer exists in the app, and the picture on file is the last true
    * photograph of it. A payments page before its account connected, an agreement before it was accepted —
    * once the world moved on, ANY recapture (--all, --only and --changed alike) would replace the last true

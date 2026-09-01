@@ -219,6 +219,10 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             sparse: screen.sparse ?? false,
             /* The perpetual-motion hold: a still frame accepted as one instant of a moving surface. */
             animated: screen.animated ?? false,
+            /* "This page's inner scroller IS the design" — served, or the capture grows the window and
+               photographs a data table as a fifty-row printout. Fifth instance of the projection trap
+               this file's own comments record: a field declared and never served does nothing at all. */
+            oneViewport: screen.oneViewport ?? false,
             /* Preserved history — the capture skips it in every mode and the live checks leave it alone. */
             frozen: screen.frozen ?? false,
             /**
