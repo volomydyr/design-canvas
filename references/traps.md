@@ -721,3 +721,20 @@ frame passes the group it is drawn in (`groupId`) with every new comment, `belon
 `comments-client.ts` decides which frame a saved comment belongs on (screen AND group; a record with no
 `flowId` predates this and keeps showing wherever its screen is), and the focus jump prefers the frame of the
 recorded group. Comments saved before the fix keep their first-group `flowId`; read the note, not the group.
+
+## A share page written by hand drifted from the canvas in a dozen places
+
+The first time the canvas was shared with the team, the page was an imitation written from memory: three
+separate pills instead of one bar, a Fit button the canvas does not have, the zoom somewhere else, a reference
+row of today's screens that the switch already shows, a hint floating over the canvas, a banner that wrapped
+into a paragraph. Each one came back as feedback, five rounds of it, and the owner's verdict on the pattern
+was "why reinvent new patterns?". The approved result is `tool/review/page.html`, and `review-build.mjs` only
+fills its blanks (title, slug, owner, data). If the page looks wrong, fix the template in the skill and
+reinstall; never write a share page for one project.
+
+Two rules came with it. **The page is republished only when the owner says so**: it is the version the owner chose
+to show, and one that followed every recapture would move the screens under the team's comments. And **a
+publish after the first never carries `review.json`** unless it is an answer built on the live file read just
+now: the first test lost the owner's comments to a reviewer's save built on an empty file, which is why the
+page also refuses to comment when `review.json` fails to load.
+

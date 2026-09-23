@@ -164,9 +164,17 @@ for (const file of [
   /* The copy standard, imported by check-canvas.mjs. Without it the oracle cannot start. */
   "copy-rules.mjs",
   "dump-screens.mjs",
+  /* Sharing a canvas with the team: the canvas runs on one machine, so the team comments on a claude.ai page
+     instead. The build FILLS the approved page (review/page.html below) from the declaration and the captures;
+     an agent that hand-built one drifted from it in a dozen places the first time. The comments script reads
+     the team's notes off the page and writes answers back to it. Neither touches the canvas. */
+  "review-build.mjs",
+  "review-comments.mjs",
 ]) {
   put(path.join(SKILL, "tool", file), path.join("design-canvas", file));
 }
+/* The shared page itself, replaced on every install like the tools: it is the skill's, not the project's. */
+put(path.join(SKILL, "tool", "review", "page.html"), path.join("design-canvas", "review", "page.html"));
 
 /**
  * The README is the one shipped file that is half the project's. Above the marker is this tool's own
@@ -275,6 +283,9 @@ const IGNORE = [
   "design-canvas/comments.json.*",
   /* The Playwright storage state the capture logs in with. Live session tokens — never committed. */
   "design-canvas/auth-state.json",
+  /* Built share pages (review-build.mjs output): pictures copied from shots/ and the team's review.json, both
+     regenerated or read back from the live page. The template and review/<slug>.json settings stay committed. */
+  "design-canvas/review/*/",
 ];
 const gitignorePath = path.join(target, ".gitignore");
 const gitignore = existsSync(gitignorePath)

@@ -211,6 +211,22 @@ NEXT_PUBLIC_CANVAS_VIEW_ONLY=1 NEXT_PUBLIC_CANVAS_PINS=1 npm run build
   `.next/server/app/api/design-canvas/shots/route.js.nft.json` after a build — the shots should be listed there.
 - **Nothing protects it.** Whatever gates the deployment gates the canvas.
 
+## Sharing it with the team
+
+The canvas is local, so the team comments on a claude.ai page instead, built from the canvas and published
+with the Artifact tool. Only when the owner has a version worth sharing: the page never follows the canvas
+on its own. The full loop is in the skill's SKILL.md, "Share a canvas with the team".
+
+```bash
+node design-canvas/review-build.mjs --canvas <slug>       # fills review/page.html into review/<slug>/
+node design-canvas/review-comments.mjs list --canvas <slug> --file <review.json read off the live page>
+node design-canvas/review-comments.mjs answer --canvas <slug> --file <live review.json> --id p1 --text "..."
+```
+
+`review/page.html` is the approved page and is replaced on every install; `review/<slug>.json` holds this
+project's share settings (`url`, `owner`, section headings) and is committed; `review/<slug>/` is build
+output and ignored. Neither script reads or writes the canvas's comments.
+
 ## Deleting it
 
 Delete the `design-canvas/` folder, then every seam marked `DELETE WITH: the design-canvas/ folder` — the three

@@ -1051,6 +1051,56 @@ does not. Written from the first real round: thirteen comments left in one sitti
    role-based click on a popover that is re-rendering can land on the button that was there a frame ago, and
    one of them is Approve, which deletes. That is how a real comment was lost here.
 
+## Share a canvas with the team
+
+The canvas runs on the owner's machine, so nobody else can open it. When they want the team to comment, publish
+the canvas's explorations as one claude.ai page they comment on. **The canvas itself does not change:** not
+its code, not its routes, not the declaration, not its comments file. Sharing is a separate loop that ends in
+the page.
+
+**THE PAGE IS UPDATED ONLY WHEN THE OWNER SAYS SO.** It is a snapshot of a version the owner chose to show, not a
+mirror of the canvas. A recapture, a new round or a fixed frame on the local canvas never rebuilds or
+republishes it on its own, and never prompts an offer to. Owner: *"it only gets updated when I have a good
+version to share with the team"*. A page that changed under the team's feet would put their comments on
+screens they never saw.
+
+**The page is `design-canvas/review/page.html`, and it is filled, never hand-built.** It is the page the owner
+approved after five rounds of feedback on the first shared canvas. An agent that wrote its own drifted from it
+in a dozen places, and the owner had to explain each one again: *"why reinvent new patterns?"* So nothing
+about the page is redesigned per project. What it is, so nobody "improves" it back:
+
+- Every exploration is a section: its title, then its frames left to right. **There is no reference row of
+  today's screens.** Each frame's own switch shows today's same state, or says there is none.
+- **Comment is on by default**, because leaving comments is the page's whole job. Off is a white pill; on is
+  blue with an X on the right, so the way back is visible.
+- **The zoom sits at the bottom right, and clicking its percentage fits everything.** There is no separate Fit
+  button. The banner sits at the bottom left, one short line: "Use the Comment button, not claude.ai's own
+  comment tool". It is dismissible, and nothing else floats over the canvas: no drag hint.
+- A comment is a box drawn on a screen plus words, saved into `review.json` beside the page with the
+  author's page id. Only the author can edit or delete theirs.
+
+The loop, each step on the owner's word:
+
+1. **Build.** `node design-canvas/review-build.mjs --canvas <slug>` writes `design-canvas/review/<slug>/`
+   (gitignored): the page, its pictures, an empty `review.json` the first time (kept after that), and
+   `publish.json`, the exact Artifact call. Optional settings live in `design-canvas/review/<slug>.json`
+   (committed): `owner` names who grants editor access, and `sections.<exploration id>.title` / `.sub`
+   shorten a heading. By default a section uses the exploration's `surface` and `title`.
+2. **Publish** with the Artifact tool, using `publish.json`: `file_path`, `root`, the `capabilities`, and
+   `first.files` on the first publish (it carries the empty `review.json`). A later publish of a new version
+   the owner asked to share uses `update.files`, which leaves `review.json` out so the team's comments are never
+   overwritten. Record the page's URL in `review/<slug>.json` as `url`, and republish to that URL.
+3. **Share.** The owner opens the page's Share menu and gives reviewers **Editor**, the only role that can
+   save a comment. Say that in one line; do not change sharing yourself.
+4. **Read the comments.** Read `review.json` off the live page (Artifact `read_file`, path `review.json`),
+   then `node design-canvas/review-comments.mjs list --canvas <slug> --file <that file>`. It prints the open
+   comments and draws each box on its screenshot as `review/<slug>/comments/<id>.png`. Open the picture;
+   the words alone are not the comment. Author ids are page ids, so the owner names who said what.
+5. **Answer on the page.** `review-comments.mjs answer --canvas <slug> --file <the live review.json, read
+   again just now> --id p3 --text "…"` (or `--answers <file>` for several). Then publish with `files`
+   holding only `review.json`. A publish built on an older copy drops a teammate's newer note, and the
+   platform refuses a stale one; on that refusal, read again and answer again.
+
 ## The traps
 
 Every one of these cost real time, and a reuse will meet most of them again. **Read

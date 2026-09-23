@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>__TITLE__</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  /* The design canvas's own world, carried as-is: a dark stage the frames float on, Inter, the pan-and-zoom
+     surface. Comments are blue: red read as destructive to a first-time reviewer. Single-theme on purpose. */
+  :root {
+    color-scheme: dark;
+    --stage: #1c2325;
+    --panel: #0c1112;
+    --panel-2: #232c2e;
+    --ink: #f2f5f5;
+    --ink-2: #b8c3c4;
+    --muted: #8a9899;
+    --edge: rgba(255, 255, 255, 0.14);
+    --blue: #3b82f6;
+    --blue-hi: #5b9bff;
+    --blue-ink: #f5f9ff;
+    --blue-wash: rgba(59, 130, 246, 0.16);
+    --ok: #3f9f6a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--stage); color: var(--ink); overflow: hidden;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 15px; line-height: 1.5;
+  }
+  button { font: inherit; color: inherit; }
+  button:focus-visible, textarea:focus-visible { outline: 2px solid #9fd3ff; outline-offset: 2px; }
+
+  /* ---- chrome, fixed over the stage */
+  .chrome { position: fixed; left: 0; right: 0; top: 0; z-index: 50; padding: env(safe-area-inset-top, 0px) 16px 0; pointer-events: none; }
+  .chrome > * { pointer-events: auto; }
+  .dock { position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 50; display: flex; justify-content: flex-start; align-items: center; gap: 8px; pointer-events: none; }
+  .dock > * { pointer-events: auto; }
+  .banner {
+    display: flex; align-items: center; gap: 12px; min-width: 0;
+    padding: 8px 8px 8px 16px; border-radius: 14px; background: linear-gradient(var(--blue-wash), var(--blue-wash)), var(--panel); box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.45);
+    font-size: 13px;
+  }
+  .banner .text { flex: 1; min-width: 0; }
+  .banner .x { flex: none; width: 30px; height: 30px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); cursor: pointer; display: grid; place-items: center; }
+  .banner .x:hover { background: rgba(255, 255, 255, 0.1); color: var(--ink); }
+  .bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 16px; margin-top: 12px; }
+  .crumb { justify-self: start; display: inline-flex; align-items: center; height: 46px; padding: 0 18px; border-radius: 999px; background: var(--panel); font-size: 14px; font-weight: 600; }
+  .jumps { justify-self: center; display: flex; align-items: center; gap: 2px; padding: 5px; background: var(--panel); border-radius: 999px; }
+  .jumps button { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 16px; border: 0; border-radius: 999px; background: transparent; font-size: 13px; font-weight: 500; color: var(--ink-2); cursor: pointer; line-height: 1; }
+  .jumps button:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+  .jumps button[aria-current="true"] { background: rgba(255, 255, 255, 0.12); color: var(--ink); }
+  .tools { justify-self: end; display: flex; align-items: center; gap: 8px; padding: 5px; background: var(--panel); border-radius: 999px; }
+  .count { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; padding: 0 8px 0 16px; white-space: nowrap; }
+  .comment-btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 18px 0 14px; border: 0; border-radius: 999px; background: var(--ink); color: var(--panel); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .comment-btn:hover { background: #fff; }
+  .comment-btn[aria-pressed="true"] { background: var(--blue); color: var(--blue-ink); padding-right: 14px; }
+  .comment-btn[aria-pressed="true"]:hover { background: var(--blue-hi); }
+  .comment-btn svg { width: 18px; height: 18px; }
+  .comment-btn .off-x { display: none; width: 14px; height: 14px; }
+  .comment-btn[aria-pressed="true"] .off-x { display: block; }
+  .status { text-align: center; margin-top: 10px; font-size: 13px; color: var(--ink-2); min-height: 20px; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6); }
+  .status.warn { color: #ffcf9f; }
+  .zoom { flex: none; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 5px; background: var(--panel); border-radius: 999px; }
+  .zoom button { width: 36px; height: 36px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); font-size: 18px; cursor: pointer; }
+  .zoom button:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+  .zoom .pct { width: auto; min-width: 54px; padding: 0 8px; text-align: center; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+  @media (max-width: 900px) { .bar { grid-template-columns: auto 1fr; } .jumps { display: none; } .tools { justify-self: end; } }
+
+  /* ---- the stage and the world it moves */
+  .stage { position: fixed; inset: 0; cursor: grab; touch-action: none; }
+  .stage.panning { cursor: grabbing; }
+  .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+  .panel-title { position: absolute; font-size: 64px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; white-space: nowrap; }
+  .panel-sub { position: absolute; font-size: 26px; color: var(--muted); white-space: nowrap; }
+  .fname { position: absolute; font-size: 30px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fnote { position: absolute; font-size: 19px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .frame { position: absolute; border-radius: 10px; background: var(--panel-2); box-shadow: 0 0 0 2px var(--edge), 0 24px 60px rgba(0, 0, 0, 0.4); }
+  .frame img { display: block; width: 100%; height: 100%; border-radius: 10px; user-select: none; -webkit-user-drag: none; }
+  .frame.flipped { background: #fff; }
+  .frame.flipped img { object-fit: contain; object-position: left top; }
+  .frame.today { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3), 0 24px 60px rgba(0, 0, 0, 0.4); }
+  body.commenting .frame:not(.flipped) { box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.55), 0 24px 60px rgba(0, 0, 0, 0.4); cursor: crosshair; }
+  .layer { position: absolute; inset: 0; }
+  .foot { position: absolute; display: flex; align-items: center; gap: 14px; }
+  .today-btn { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 20px; border: 0; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.22); color: var(--ink-2); font-size: 19px; font-weight: 500; cursor: pointer; }
+  .today-btn:hover { background: rgba(255, 255, 255, 0.08); color: var(--ink); }
+  .today-btn[aria-pressed="true"] { background: var(--ink); color: var(--panel); box-shadow: none; }
+  .today-btn svg { width: 22px; height: 22px; }
+  .foot .none { font-size: 18px; color: var(--muted); }
+  .tag { display: inline-flex; align-items: center; height: 40px; padding: 0 16px; border-radius: 999px; background: rgba(255, 255, 255, 0.09); color: var(--ink-2); font-size: 18px; }
+
+  /* comment marks: sized for the screen, not the world (inverse-scaled by --inv) */
+  .region { position: absolute; border-radius: 8px; box-shadow: 0 0 0 calc(3px * var(--inv, 1)) var(--blue); pointer-events: none; }
+  .region.draft { background: rgba(59, 130, 246, 0.12); }
+  .pin { position: absolute; width: 26px; height: 26px; display: grid; place-items: center; border: 0; border-radius: 999px; background: var(--blue); color: var(--blue-ink); font-size: 12px; font-weight: 700; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4); cursor: pointer; z-index: 5; transform: translate(-9px, -9px) scale(var(--inv, 1)); transform-origin: 9px 9px; }
+  .pin.answered { box-shadow: 0 0 0 3px var(--ok), 0 4px 12px rgba(0, 0, 0, 0.4); }
+  .note { position: absolute; z-index: 20; width: 320px; padding: 14px; border-radius: 16px; background: var(--panel); box-shadow: 0 0 0 1px var(--edge), 0 18px 44px rgba(0, 0, 0, 0.55); font-size: 13px; line-height: 1.45; cursor: auto; }
+  .note .who { color: var(--muted); font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
+  .note p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .answer { margin-top: 12px; padding-left: 12px; border-left: 2px solid rgba(255, 255, 255, 0.18); }
+  .answer small { display: block; color: var(--muted); font-size: 11px; font-weight: 500; margin-bottom: 3px; }
+  .answer p { color: var(--ink-2); }
+  .note textarea { width: 100%; min-height: 104px; resize: vertical; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--panel-2); color: var(--ink); font: inherit; line-height: 1.45; }
+  .note textarea::placeholder { color: var(--muted); }
+  .row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+  .btn { height: 32px; padding: 0 14px; border: 0; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .btn.ghost { background: transparent; color: var(--ink-2); }
+  .btn.ghost:hover { background: rgba(255, 255, 255, 0.08); }
+  .btn.solid { background: var(--ink); color: var(--panel); }
+  .btn.danger { background: transparent; color: #ff9a8f; }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .field-error { color: #ffcf9f; font-size: 12px; margin-top: 6px; }
+  .nudge { position: absolute; left: 50%; top: 50%; z-index: 15; padding: 9px 14px; border-radius: 999px; background: var(--panel); box-shadow: 0 0 0 1px var(--edge); font-size: 13px; white-space: nowrap; pointer-events: none; transform: translate(-50%, -50%) scale(var(--inv, 1)); }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage"><div class="world" id="world"></div></div>
+
+  <div class="chrome">
+    <div class="bar">
+      <div class="crumb">__CANVAS_TITLE__</div>
+      <nav class="jumps" id="jumps" aria-label="Sections"></nav>
+      <div class="tools">
+        <span class="count" id="count">Loading comments</span>
+        <button class="comment-btn" id="comment-toggle" type="button" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5h16v10.5H9l-5 4z"/></svg>
+          <span>Comment</span>
+          <svg class="off-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+  </div>
+
+  <div class="dock">
+    <div class="banner" id="banner" hidden>
+      <span class="text" id="banner-text">Use the Comment button, not claude.ai's own comment tool</span>
+      <button class="x" id="banner-x" type="button" aria-label="Dismiss" title="Dismiss">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="zoom" aria-label="Zoom">
+      <button type="button" id="zoom-out" aria-label="Zoom out">−</button>
+      <button type="button" class="pct" id="zoom-pct" title="Fit Everything">100%</button>
+      <button type="button" id="zoom-in" aria-label="Zoom in">+</button>
+    </div>
+  </div>
+
+<script id="canvas-data" type="application/json">__CANVAS_DATA__</script>
+<script>
+(() => {
+  const DATA = JSON.parse(document.getElementById("canvas-data").textContent);
+  const DRAFT_KEY = "__SLUG__-review-draft", BANNER_KEY = "__SLUG__-review-banner-dismissed";
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
+  const CLOCK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.75"/><path d="M12 7.5V12l3 2"/></svg>';
+
+  /* ---- world layout: the design canvas's exploration shape. Each section is a panel: its title, then the
+     redesign's frames left to right in step order. Today's screens are reached through each frame's switch. */
+  const FW = 720, GAP_X = 70, NAME_H = 88, FOOT_H = 84, ROW_GAP = 60, PANEL_GAP = 260, TITLE_H = 150;
+  const world = $("world");
+  const refs = {};           // frame id -> { box, img, layer, frame, isToday }
+  const panels = [];         // { id, title, x, y, w, h }
+  let y = 0, worldW = 0;
+  const place = (n, x, yy, w, h) => { n.style.left = x + "px"; n.style.top = yy + "px"; if (w != null) n.style.width = w + "px"; if (h != null) n.style.height = h + "px"; return n; };
+
+  function drawFrame(f, x, yy, label, isToday) {
+    const h = Math.round(FW * f.h / f.w);
+    world.append(place(el("div", "fname", label), x, yy, FW));
+    if (f.note) world.append(place(el("div", "fnote", f.note), x, yy + 40, FW));
+    const box = place(el("div", "frame" + (isToday ? " today" : "")), x, yy + NAME_H, FW, h);
+    box.dataset.frame = f.id;
+    const img = el("img"); img.src = "shots/" + f.id + ".webp"; img.alt = label; img.width = f.w; img.height = f.h; img.loading = "lazy"; img.decoding = "async"; img.draggable = false;
+    const layer = el("div", "layer");
+    box.append(img, layer);
+    world.append(box);
+    const foot = place(el("div", "foot"), x, yy + NAME_H + h + 18, FW);
+    foot.dataset.chrome = "";
+    if (isToday) foot.append(el("span", "tag", "Today's app"));
+    else if (f.today && DATA.today[f.today]) {
+      const t = el("button", "today-btn"); t.type = "button"; t.innerHTML = CLOCK + "<span>Today's version</span>"; t.setAttribute("aria-pressed", "false");
+      t.addEventListener("click", () => flip(f.id, t));
+      foot.append(t);
+    } else foot.append(el("span", "none", "No today's version to compare"));
+    world.append(foot);
+    if (!isToday) { refs[f.id] = { box, img, layer, frame: f }; layer.addEventListener("pointerdown", (e) => startDraw(e, f.id)); }
+    return h;
+  }
+
+  for (const sec of DATA.sections) {
+    const top = y;
+    world.append(place(el("div", "panel-title", sec.title), 0, y));
+    world.append(place(el("div", "panel-sub", sec.sub), 0, y + 80));
+    y += TITLE_H;
+    let x = 0, rowH = 0;
+    for (const f of sec.frames) { const h = drawFrame(f, x, y, f.label, false); rowH = Math.max(rowH, h); x += FW + GAP_X; }
+    worldW = Math.max(worldW, x);
+    y += NAME_H + rowH + FOOT_H;
+    panels.push({ id: sec.id, title: sec.title, x: 0, y: top, w: Math.max(x - GAP_X, FW), h: y - top });
+    y += PANEL_GAP;
+  }
+  world.style.width = worldW + "px"; world.style.height = y + "px";
+
+  /* ---- pan and zoom */
+  const stage = $("stage");
+  let zoom = 0.4, tx = 40, ty = 180;
+  const MIN = 0.05, MAX = 2;
+  function apply() {
+    world.style.transform = `translate(${tx}px, ${ty}px) scale(${zoom})`;
+    world.style.setProperty("--inv", String(1 / zoom));
+    $("zoom-pct").textContent = Math.round(zoom * 100) + "%";
+    // which section is in view, for the tabs
+    const cy = (innerHeight / 2 - ty) / zoom;
+    let cur = panels[0];
+    for (const p of panels) if (cy >= p.y - PANEL_GAP / 2) cur = p;
+    for (const b of $("jumps").children) b.setAttribute("aria-current", String(b.dataset.id === cur.id));
+  }
+  function zoomAt(factor, cx, cy) {
+    const nz = Math.min(MAX, Math.max(MIN, zoom * factor));
+    tx = cx - (cx - tx) * (nz / zoom); ty = cy - (cy - ty) * (nz / zoom); zoom = nz; apply();
+  }
+  function chromeTop() { return document.querySelector(".chrome").getBoundingClientRect().bottom + 16; }
+  function show(p, fitWidthFrames) {
+    const top = chromeTop();
+    const availW = innerWidth - 64, availH = innerHeight - top - 80;
+    const w = fitWidthFrames ? Math.min(p.w, fitWidthFrames * (FW + GAP_X)) : p.w;
+    zoom = Math.min(MAX, Math.max(MIN, Math.min(availW / w, availH / p.h)));
+    tx = 32 - p.x * zoom; ty = top - p.y * zoom; apply();
+  }
+  function fitAll() {
+    const top = chromeTop();
+    zoom = Math.min((innerWidth - 64) / worldW, (innerHeight - top - 80) / y);
+    zoom = Math.max(MIN, zoom); tx = 32; ty = top; apply();
+  }
+  stage.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX, e.clientY);
+    else { tx -= e.deltaX; ty -= e.deltaY; apply(); }
+  }, { passive: false });
+  let pan = null;
+  stage.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0 || e.target.closest("[data-chrome], .note, .pin, button")) return;
+    if (commenting && e.target.closest(".frame:not(.flipped)")) return;   // drawing, handled on the frame
+    pan = { x: e.clientX, y: e.clientY, tx, ty, moved: false, frame: e.target.closest(".frame") };
+    stage.setPointerCapture(e.pointerId); stage.classList.add("panning");
+  });
+  stage.addEventListener("pointermove", (e) => {
+    if (!pan) return;
+    const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) pan.moved = true;
+    tx = pan.tx + dx; ty = pan.ty + dy; apply();
+  });
+  const endPan = () => {
+    if (!pan) return;
+    if (!pan.moved && pan.frame && refs[pan.frame.dataset.frame] && !flipped.has(pan.frame.dataset.frame)) nudge(pan.frame.dataset.frame);
+    pan = null; stage.classList.remove("panning");
+  };
+  stage.addEventListener("pointerup", endPan); stage.addEventListener("pointercancel", endPan);
+  $("zoom-in").addEventListener("click", () => zoomAt(1.25, innerWidth / 2, innerHeight / 2));
+  $("zoom-out").addEventListener("click", () => zoomAt(0.8, innerWidth / 2, innerHeight / 2));
+  $("zoom-pct").addEventListener("click", fitAll);
+  addEventListener("resize", apply);
+
+  for (const p of panels) {
+    const b = el("button", null, p.title); b.type = "button"; b.dataset.id = p.id;
+    b.addEventListener("click", () => show(p, 4));
+    $("jumps").append(b);
+  }
+
+  /* ---- the banner: at the very top, dismissible, remembered per browser */
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(BANNER_KEY) === "1"; } catch (_) {}
+  $("banner").hidden = dismissed;
+  $("banner-x").addEventListener("click", () => { $("banner").hidden = true; try { localStorage.setItem(BANNER_KEY, "1"); } catch (_) {} });
+
+  /* ---- comments */
+  let review = { comments: [] }, loaded = false;
+  let commenting = true, openId = null, draft = null, readOnly = false, saving = false;
+  let art = null, user = null, myId = null, names = {};
+  const flipped = new Set();
+  const status = (text, warn) => { const s = $("status"); s.textContent = text || ""; s.classList.toggle("warn", Boolean(warn)); };
+
+  function flip(id, btn) {
+    const r = refs[id], f = r.frame;
+    if (flipped.has(id)) {
+      flipped.delete(id); r.img.src = "shots/" + id + ".webp";
+      btn.setAttribute("aria-pressed", "false"); btn.querySelector("span").textContent = "Today's version"; r.box.classList.remove("flipped");
+    } else {
+      flipped.add(id); r.img.src = "shots/" + f.today + ".webp";
+      btn.setAttribute("aria-pressed", "true"); btn.querySelector("span").textContent = "The redesign"; r.box.classList.add("flipped");
+      if (draft && draft.frame === id) draft = null;
+    }
+    drawLayer(id);
+  }
+
+  fetch("review.json", { cache: "no-store" })
+    .then((r) => { if (!r.ok) throw new Error("status " + r.status); return r.json(); })
+    .then((data) => {
+      if (!data || !Array.isArray(data.comments)) throw new Error("no comments list");
+      review = data; loaded = true;
+      try { const kept = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "null"); if (kept && kept.frame && refs[kept.frame]) draft = kept; } catch (_) {}
+      drawAll();
+    })
+    .catch(() => { loaded = false; readOnly = true; commenting = false; status("The comments did not load, so commenting is off to protect them. Reload the page to try again", true); drawAll(); });
+
+  if (window.claude && window.claude.use) {
+    window.claude.use("artifact").then((ns) => { art = ns; if (!ns) { readOnly = true; commenting = false; status("Open this page inside claude.ai to leave comments", true); } drawAll(); });
+    window.claude.use("user").then(async (ns) => { user = ns; if (ns) myId = await ns.id(); drawAll(); });
+  } else { readOnly = true; commenting = false; status("Open this page inside claude.ai to leave comments", true); }
+
+  $("comment-toggle").addEventListener("click", () => {
+    if (!loaded) { status("The comments did not load, so commenting is off to protect them. Reload the page to try again", true); return; }
+    if (readOnly) { status("This link is view only. Ask __OWNER__ for editor access to comment", true); return; }
+    commenting = !commenting; openId = null;
+    status("");
+    drawAll();
+  });
+
+  function nextId() { let max = 0; for (const c of review.comments) { const n = Number(String(c.id).replace(/\D/g, "")); if (n > max) max = n; } return "p" + (max + 1); }
+
+  async function publish(next, onDone) {
+    if (!loaded) { status("The comments did not load, so nothing was saved. Reload the page", true); return; }
+    if (!art) { readOnly = true; status("Open this page inside claude.ai to leave comments", true); return; }
+    saving = true; drawAll();
+    try {
+      // The whole file is written from the file as loaded; the platform refuses the write (conflict) if anyone
+      // saved since this view opened, and every view then reloads to the newer comments.
+      await art.publish({ "review.json": JSON.stringify(next, null, 2) + "\n" });
+      review = next; saving = false; onDone && onDone(); status("Saved"); drawAll();
+    } catch (e) {
+      saving = false;
+      const code = e && e.code;
+      if (code === "conflict") { status("Someone else just commented. Loading their comments, your note is kept"); return; }
+      if (["not_writer", "not_granted", "consent_required", "capability_disabled", "capability_removed", "not_declared"].includes(code)) { readOnly = true; commenting = false; status("This link is view only. Ask __OWNER__ for editor access to comment", true); }
+      else if (code === "rate_limited") status("Saving too often. Wait a few seconds and press Save again", true);
+      else status("The comment was not saved. Press Save again", true);
+      drawAll();
+    }
+  }
+  function saveDraft() {
+    const text = (draft && draft.note || "").trim();
+    if (!text) { draft.error = "Write what you mean first"; drawLayer(draft.frame); focusDraft(); return; }
+    const comment = { id: nextId(), frame: draft.frame, region: draft.region, note: text, by: myId, at: new Date().toISOString() };
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ frame: draft.frame, region: draft.region, note: text })); } catch (_) {}
+    publish({ ...review, comments: [...review.comments, comment] }, () => { draft = null; openId = comment.id; try { sessionStorage.removeItem(DRAFT_KEY); } catch (_) {} });
+  }
+  function deleteComment(id) { publish({ ...review, comments: review.comments.filter((c) => c.id !== id) }, () => { openId = null; }); }
+  function focusDraft() { requestAnimationFrame(() => { const t = $("draft-note"); if (t) t.focus({ preventScroll: true }); }); }
+
+  // A note hangs under its box at screen size, flipped to the box's right edge past the middle of the frame.
+  function hang(box, g) {
+    const flipSide = g.x + g.w / 2 > 55;
+    box.style.transformOrigin = flipSide ? "top right" : "top left";
+    box.style.transform = "scale(var(--inv, 1))";
+    if (flipSide) box.style.right = (100 - (g.x + g.w)) + "%"; else box.style.left = g.x + "%";
+    box.style.top = "calc(" + Math.min(g.y + g.h, 85) + "% + 10px * var(--inv, 1))";
+  }
+
+  let nudgeTimer = null;
+  function nudge(id) {
+    const r = refs[id]; if (!r || commenting) return;
+    r.layer.querySelectorAll(".nudge").forEach((n) => n.remove());
+    const n = el("div", "nudge", "Press the blue Comment button first, then drag a box");
+    r.layer.append(n); clearTimeout(nudgeTimer); nudgeTimer = setTimeout(() => n.remove(), 2200);
+  }
+
+  async function drawAll() {
+    document.body.classList.toggle("commenting", commenting);
+    $("comment-toggle").setAttribute("aria-pressed", String(commenting));
+    const n = review.comments.length;
+    $("count").textContent = !loaded ? "Comments not loaded" : n === 0 ? "No comments yet" : n === 1 ? "1 comment" : n + " comments";
+    const ids = [...new Set(review.comments.map((c) => c.by).filter(Boolean))];
+    if (user && ids.length) { try { const ps = await user.profiles(ids); names = {}; for (const id of ids) names[id] = ps[id] ? ps[id].name : ""; } catch (_) {} }
+    for (const id of Object.keys(refs)) drawLayer(id);
+  }
+
+  function drawLayer(id) {
+    const r = refs[id], layer = r.layer;
+    layer.textContent = "";
+    if (flipped.has(id)) return;   // today's picture takes no pins: a note there would be filed on the redesign
+    review.comments.forEach((c, i) => {
+      if (c.frame !== id) return;
+      const g = c.region;
+      const reg = el("div", "region");
+      Object.assign(reg.style, { left: g.x + "%", top: g.y + "%", width: g.w + "%", height: g.h + "%" });
+      layer.append(reg);
+      const pin = el("button", "pin" + (c.answer ? " answered" : ""), String(i + 1));
+      pin.type = "button"; pin.title = c.note; pin.setAttribute("aria-label", "Comment " + (i + 1));
+      Object.assign(pin.style, { left: g.x + "%", top: g.y + "%" });
+      pin.addEventListener("pointerdown", (e) => e.stopPropagation());
+      pin.addEventListener("click", (e) => { e.stopPropagation(); const was = openId; openId = was === c.id ? null : c.id; draft = null; if (was && was !== c.id) { const o = review.comments.find((x) => x.id === was); if (o && refs[o.frame]) drawLayer(o.frame); } drawLayer(id); });
+      layer.append(pin);
+      if (openId === c.id) {
+        const box = el("div", "note"); box.addEventListener("pointerdown", (e) => e.stopPropagation()); box.addEventListener("wheel", (e) => e.stopPropagation());
+        const who = el("div", "who");
+        const name = c.by ? (names[c.by] || "Someone") : "Someone";
+        who.append(el("span", null, name + (c.by && c.by === myId ? " (you)" : "")), el("span", null, new Date(c.at).toLocaleDateString(undefined, { month: "short", day: "numeric" })));
+        box.append(who, el("p", null, c.note));
+        if (c.answer && c.answer.text) { const a = el("div", "answer"); a.append(el("small", null, "Answer"), el("p", null, c.answer.text)); box.append(a); }
+        const row = el("div", "row");
+        if (!readOnly && c.by && c.by === myId) { const del = el("button", "btn danger", "Delete"); del.type = "button"; del.disabled = saving; del.addEventListener("click", () => deleteComment(c.id)); row.append(del); }
+        const close = el("button", "btn ghost", "Close"); close.type = "button"; close.addEventListener("click", () => { openId = null; drawLayer(id); });
+        row.append(close); box.append(row); hang(box, g); layer.append(box);
+      }
+    });
+    if (draft && draft.frame === id && draft.region) {
+      const g = draft.region;
+      const reg = el("div", "region draft"); Object.assign(reg.style, { left: g.x + "%", top: g.y + "%", width: g.w + "%", height: g.h + "%" });
+      layer.append(reg);
+      if (!draft.dragging) {
+        const box = el("div", "note"); box.addEventListener("pointerdown", (e) => e.stopPropagation()); box.addEventListener("wheel", (e) => e.stopPropagation());
+        const ta = el("textarea"); ta.id = "draft-note"; ta.placeholder = "What is wrong here, or what do you want to know?"; ta.value = draft.note || "";
+        ta.addEventListener("input", () => { draft.note = ta.value; if (draft.error) { draft.error = null; const er = box.querySelector(".field-error"); if (er) er.remove(); } });
+        ta.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) saveDraft(); if (e.key === "Escape") { draft = null; drawLayer(id); } });
+        box.append(ta);
+        if (draft.error) box.append(el("div", "field-error", draft.error));
+        const row = el("div", "row");
+        const cancel = el("button", "btn ghost", "Cancel"); cancel.type = "button";
+        cancel.addEventListener("click", () => { draft = null; try { sessionStorage.removeItem(DRAFT_KEY); } catch (_) {} drawLayer(id); });
+        const save = el("button", "btn solid", saving ? "Saving" : "Save"); save.type = "button"; save.disabled = saving; save.addEventListener("click", saveDraft);
+        row.append(cancel, save); box.append(row); hang(box, g); layer.append(box); focusDraft();
+      }
+    }
+  }
+
+  function startDraw(e, id) {
+    if (!commenting || flipped.has(id) || readOnly || saving || !loaded) return;   // not drawing: the stage pans
+    e.preventDefault(); e.stopPropagation();
+    const layer = refs[id].layer, rect = layer.getBoundingClientRect();
+    const pct = (ev) => ({ x: Math.max(0, Math.min(100, ((ev.clientX - rect.left) / rect.width) * 100)), y: Math.max(0, Math.min(100, ((ev.clientY - rect.top) / rect.height) * 100)) });
+    const start = pct(e);
+    const prev = draft ? draft.frame : null;
+    const prevOpen = openId ? (review.comments.find((c) => c.id === openId) || {}).frame : null;
+    openId = null;
+    draft = { frame: id, region: { x: start.x, y: start.y, w: 0, h: 0 }, note: "", dragging: true };
+    if (prev && prev !== id && refs[prev]) drawLayer(prev);
+    if (prevOpen && prevOpen !== id && refs[prevOpen]) drawLayer(prevOpen);
+    drawLayer(id);
+    layer.setPointerCapture(e.pointerId);
+    let regEl = null;
+    const move = (ev) => {
+      const p = pct(ev);
+      draft.region = { x: Math.min(start.x, p.x), y: Math.min(start.y, p.y), w: Math.abs(p.x - start.x), h: Math.abs(p.y - start.y) };
+      if (!regEl) { regEl = el("div", "region draft"); layer.append(regEl); }
+      Object.assign(regEl.style, { left: draft.region.x + "%", top: draft.region.y + "%", width: draft.region.w + "%", height: draft.region.h + "%" });
+    };
+    const up = () => {
+      layer.removeEventListener("pointermove", move); layer.removeEventListener("pointerup", up); layer.removeEventListener("pointercancel", up);
+      if (draft.region.w < 1 || draft.region.h < 1) { draft = null; drawLayer(id); return; }
+      const round = (v) => Math.round(v * 100) / 100;
+      draft.region = { x: round(draft.region.x), y: round(draft.region.y), w: round(draft.region.w), h: round(draft.region.h) };
+      draft.dragging = false; drawLayer(id);
+    };
+    layer.addEventListener("pointermove", move); layer.addEventListener("pointerup", up); layer.addEventListener("pointercancel", up);
+  }
+
+  show(panels[0], 4);
+  drawAll();
+})();
+</script>
+</body>
+</html>
