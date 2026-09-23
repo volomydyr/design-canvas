@@ -18,7 +18,7 @@
 import { useEffect } from "react";
 
 import { CANVAS_STATE_PARAM } from "../core/types";
-import { applyCanvasState } from "./states";
+import { applyCanvasState, canvasPinsAllowed } from "./states";
 
 /**
  * A PINNED PAGE MUST NEVER SHOW A DIFFERENT REAL STATE, not even for a moment — and this is a correctness fix,
@@ -96,7 +96,8 @@ const BLANK_UNTIL_PINNED = `
 const PINNED_MARK = "data-canvas-pinned";
 
 export function CanvasStatePin() {
-  if (process.env.NODE_ENV !== "production") applyCanvasState();
+  /* `canvasPinsAllowed()`, not NODE_ENV: see its note in ./states.ts. */
+  if (canvasPinsAllowed()) applyCanvasState();
 
   /* After hydration the store holds the pinned state and React has rendered it, so the page can be shown. */
   useEffect(() => {
@@ -105,6 +106,6 @@ export function CanvasStatePin() {
     document.documentElement.setAttribute(PINNED_MARK, "1");
   }, []);
 
-  if (process.env.NODE_ENV === "production") return null;
+  if (!canvasPinsAllowed()) return null;
   return <script dangerouslySetInnerHTML={{ __html: BLANK_UNTIL_PINNED }} />;
 }

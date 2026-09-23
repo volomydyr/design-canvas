@@ -310,6 +310,52 @@ export type CanvasScreen = {
    * `check-canvas.mjs` asserts every one of them still exists.
    */
   source?: string[];
+  /**
+   * A LO-FI WIREFRAME, BEFORE THERE IS CODE. The address of a plain HTML file served OUTSIDE the app —
+   * absolute, or a path joined onto the canvas's `wireframeBase` — photographed like any screen and drawn as
+   * an option on the exploration tab. It has no `route` (nothing in the app answers it), no Open button
+   * (there is no page to go back to), no `source` badges (no component is behind it), and the oracle skips
+   * its live pass and its source rule; its claims are still proved against the served HTML, and the picture
+   * is stamped with the HTML's own hash so an edited wireframe recaptures itself.
+   *
+   * Why it exists: a redesign too large to decide in chat. Owner, 2026-09-21, on eight structural
+   * decisions asked at once: _"it's gonna be very difficult to just make a decision right now … you need to
+   * do very, very low fidelity wireframes. No UI design … Everything should be black and white, rectangular,
+   * but what's important is the copy, the structure, the layout, the hierarchy."_ And on where they live:
+   * _"I don't even want you to do this wireframes in our code. you can just create HTML prototypes."_ So the
+   * exploration tab gains a step before the rounds of real prototypes it was built for: today's screen as
+   * `original`, and several structures drawn as wireframes beside it.
+   */
+  wireframe?: string;
+  /**
+   * THE SCREEN THIS FRAME REDESIGNS, in today's app — or `null`, meaning nothing like it exists today.
+   *
+   * Every exploration frame carries a switch that flips it, in place, to that screen: the picture in the frame
+   * becomes the incumbent's shot at the frame's size, the caption reads "Today: …", and a second press brings
+   * the option back. The owner asked for it before demoing a hundred-frame stock exploration to his team
+   * (2026-09-22), and then drew the line that decides this field: the screen shown has to be THE SAME STATE
+   * as the option — the empty Pieces tab flips to today's empty Pieces tab, the Adjust dialog to today's
+   * Adjust dialog — _"make sure that you don't end up showing the same freaking screen for many, many
+   * different screens, because it's going to be a really big mistake. I'm talking about everything, even
+   * like empty states."_ So there is NO default: a frame that does not say what it redesigns is refused by
+   * the layout and the oracle, and the panel's `original` is only ever the incumbent's own frame.
+   *
+   * The id must be a screen the permanent views declare. `null` is the one honest alternative — _"the only
+   * exception is if there is literally no such a thing in the old code"_ — and it draws no switch at all.
+   * What this costs a canvas: every state an option is drawn in has to exist in today's app as a captured
+   * screen, reachable by URL. That is pin work in the app, and it is most of the work.
+   */
+  redesigns?: string | null;
+  /**
+   * THIS `wireframe` URL IS A STILL OF THE REAL APP, not a drawing: a page holding one screenshot, taken by
+   * driving the running app by hand or by script into a state no URL reaches (a dialog three clicks deep, a
+   * filtered list, a scan result). It is what a `redesigns` points at when today's state has no route of its
+   * own. The frame's pill then says "Still" instead of "Wireframe", and nothing else changes: no Open (no URL
+   * lands there), claims proved against the served page, recaptured when the file changes. KISS, the owner's
+   * word for it: _"why the hell do you even need pins for old code? i asked for screenshots of old code to
+   * compare with the explorations."_
+   */
+  still?: boolean;
 };
 
 export type CanvasViewport = {
@@ -465,7 +511,12 @@ export type CanvasExploration = {
    * three onward, so the heading is written once by the person who designed it rather than assembled at render
    * time out of whatever a declaration happened to say.
    */
-  round?: number;
+  round?: number | "refined";
+  /**
+   * `"refined"` is the last round: one liked option refined against the comments, a panel of one or of that
+   * option's own steps. The hand-off names it that way, so the type accepts it — it was `number` alone, and
+   * the first refined round could not be declared as the hand-off asked.
+   */
   /**
    * THE SCREEN BEING REDESIGNED — the id of a screen this declaration already draws in its permanent views.
    *
@@ -552,6 +603,12 @@ export type CanvasDeclaration = {
    * Checked with the same reach as `expect`: the frame's own document and every same-origin frame inside it.
    */
   forbid?: string[];
+  /**
+   * Where this canvas's lo-fi wireframes are served, e.g. `http://localhost:3070`. A screen's relative
+   * `wireframe` path is joined onto it; an absolute one ignores it. Kept on the canvas rather than on every
+   * screen so moving the static server changes one line. See `CanvasScreen.wireframe`.
+   */
+  wireframeBase?: string;
   /**
    * Optional third view. A declaration with none simply has two tabs, which is every canvas built before
    * this existed.
@@ -814,11 +871,20 @@ export type CanvasComment = {
    * a recaptured screen, decides it is still wrong, and dismisses it with another round of feedback: the note
    * becomes the new words and the old ones move here, so the agent can see what it already tried.
    */
-  history?: Array<{ note: string; at: string }>;
+  history?: Array<{ note: string; at: string; answer?: string }>;
   /** The shot this was drawn on. */
   shotHash?: string;
   /** That screen has been captured again since, so what is under the outline may have changed. */
   stale?: boolean;
+  /**
+   * THE AGENT'S ANSWER, when the comment asked something rather than pointed at something wrong.
+   *
+   * Written by `PATCH { id, answer }`, which also marks the comment consumed, and drawn under the reviewer's
+   * words in the open pin — so an explanation is read where the question was asked. The owner, on getting
+   * one in chat only (c32, 2026-09-22): the answer has to be beside the comment on the canvas. A dismissal
+   * moves it into `history` with the words it answered, so the thread keeps both sides.
+   */
+  answer?: { text: string; at: string } | null;
 };
 
 /**

@@ -85,6 +85,8 @@ import {
   loadComments,
   markSeen,
   loadShots,
+  belongsOnFrame,
+  homeFrameOf,
   saveComment,
   setVerdict,
   verdictsIn,
@@ -206,7 +208,7 @@ const SECTION_PAD = 90;
  * the number on the button can never disagree.
  */
 const handoffLine = (canvas: string, file: string, ids: string[]) =>
-  `Act on all ${ids.length} design comment(s) in ${file}: ${ids.join(", ")}. Work every one of them, not a subset — if one seems already handled, say so rather than skipping it silently. Each has an \`image\`: open it and look inside the red outline. When a comment is done, PATCH /api/design-canvas/comments?canvas=${canvas} with { id, consumed: true }.`;
+  `Act on all ${ids.length} design comment(s) in ${file}: ${ids.join(", ")}. Work every one of them, not a subset — if one seems already handled, say so rather than skipping it silently. Each has an \`image\`: open it and look inside the red outline. When a comment is done, PATCH /api/design-canvas/comments?canvas=${canvas} with { id, consumed: true }. When a comment ASKS something, answer it in the record, not only in chat: PATCH the same route with { id, answer: "<the answer>" } (or drain.mjs --ids cN --answer "…"); the reviewer reads it under the pin.`;
 
 /**
  * WHAT A JUDGED EXPLORATION HANDS OVER, which is a round of work rather than a list of notes.
@@ -741,6 +743,17 @@ export function CanvasView({
     [declaration],
   );
 
+  /** The permanent views' screens by id: what an exploration frame's switch to today resolves against. */
+  const permanentById = useMemo(
+    () =>
+      new Map(
+        declaration.flows
+          .flatMap((flow) => flow.screens)
+          .map((screen) => [screen.id, screen] as const),
+      ),
+    [declaration],
+  );
+
   /**
    * The rounds in play, as one short phrase. One distinct `round` across every exploration is the common case and
    * reads as a single state ("3 variants"); more than one means the questions are at different depths, and the
@@ -924,21 +937,15 @@ export function CanvasView({
     () =>
       allScreens(declaration)
         /**
-         * EXPLORATION FRAMES ARE NEVER "NEW", because every one of them always is.
-         *
-         * An exploration exists only while a design question is open, and its entire content is options the
-         * reviewer has not seen yet. Flagging them produces a count that can only ever equal the number of
-         * options, and offers to walk one by one through frames that were deliberately drawn side by side to be
-         * compared instead. The owner, on a round that arrived under "1 of 5 New Screens": *"the screens on the
-         * exploration tab do not need to be marked as new, because they are essentially all new. The new screen
-         * functionality that marks them with blue color and allows to review them one by one is supposed to be
-         * for the user flows and for the grouped screens."*
-         *
-         * So the queue covers the two PERMANENT views only, where a new frame really is an arrival among frames
-         * that were already there. It also keeps exploration ids out of `seen`, which is what makes retiring a
-         * spent round free: nothing recorded that they were ever looked at, so nothing is left counting them.
+         * EXPLORATION FRAMES COUNT AS NEW TOO, since 2026-09-22. They were excluded for a month on the owner's
+         * 2026-08 ruling that "the screens on the exploration tab do not need to be marked as new, because they
+         * are essentially all new". He reversed it after a stock exploration grew to a hundred frames, stacked
+         * under a handful of options: *"sometimes there are so many screens that it might become helpful to
+         * actually see which ones are the new ones and switch between them quickly to look and provide feedback
+         * ... so maybe we need to get rid of that exception in the skill."* So every declared frame on every tab
+         * is in the queue, and the baseline is set the same way everywhere: `adopt.mjs` before the first
+         * delivery, `adopt.mjs --only` for frames the reviewer has already seen, `unsee.mjs` for the opposite.
          */
-        .filter(({ view }) => view !== "exploration")
         /* Explanation panels are canvas chrome, not arrivals: nothing to review, so never in the queue. */
         .filter(({ view }) => view !== "explain")
         .map(({ screen }) => screen.id),
@@ -992,7 +999,7 @@ export function CanvasView({
    */
   const unseenByTab = useMemo(() => {
     const fresh = new Set(newScreens);
-    const byTab: Record<"flows" | "kinds", string[]> = { flows: [], kinds: [] };
+    const byTab: Record<"flows" | "kinds" | "explore", string[]> = { flows: [], kinds: [], explore: [] };
     for (const { screen, view: drawnIn } of allScreens(declaration)) {
       if (!fresh.has(screen.id)) continue;
       if (drawnIn === "flow") {
@@ -1000,13 +1007,15 @@ export function CanvasView({
         byTab.kinds.push(screen.id);
       } else if (drawnIn === "flowOnly") byTab.flows.push(screen.id);
       else if (drawnIn === "kinds") byTab.kinds.push(screen.id);
+      /* Since 2026-09-22 the exploration tab has a queue of its own, see `declaredIds`. */
+      else if (drawnIn === "exploration") byTab.explore.push(screen.id);
     }
     return byTab;
   }, [newScreens, declaration]);
   const unseenTabs = useMemo(
     () =>
       new Set<ViewMode>(
-        (["flows", "kinds"] as const).filter((tab) => unseenByTab[tab].length > 0),
+        (["flows", "kinds", "explore"] as const).filter((tab) => unseenByTab[tab].length > 0),
       ),
     [unseenByTab],
   );
@@ -1021,10 +1030,7 @@ export function CanvasView({
    * `isNew` stays global, because a frame is new wherever it is drawn and its ring should say so.
    * Only the counting and the stepping are scoped, which is what the reviewer actually walks.
    */
-  const newHere = useMemo(
-    () => (view === "explore" ? [] : unseenByTab[view]),
-    [unseenByTab, view],
-  );
+  const newHere = useMemo(() => unseenByTab[view], [unseenByTab, view]);
 
   /**
    * SEEDED ON FIRST SIGHT, or every frame on an existing canvas would be new at once.
@@ -1167,16 +1173,27 @@ export function CanvasView({
    * the canvas had only one screenshot with command. And when I click the chevrons to look at those
    * other comments, it just point me at some areas, but no comment indicators at all."*
    *
-   * A verdict leaves the pile the way it always did: the agent drains it with `consumed: true`, and
-   * `spent()` above drops it once its screen is gone.
+   * A verdict leaves the pile for good: the route deletes it the moment an agent marks it consumed, because
+   * there is no press on this canvas that could ever answer one.
+   *
+   * AND IT NO LONGER ASKS FOR `stale`, WHICH IS THE OTHER HALF OF THE SAME BUG. Consumed says the agent has
+   * answered this; stale says the picture under the rectangle was taken again. Those are different facts and
+   * requiring both made a comment the agent answered on a screen nobody recaptured invisible in every view:
+   * out of the hand-off because it is consumed, out of this queue because it is not stale. It happens on
+   * purpose, routinely — a fix the owner asked to be made in code without spending a capture on it is exactly
+   * that shape, in his words, *"don't recapture it please, it will take way too much time, just ensure you fix
+   * it in the code"* — and two such notes then sat in the file for eighteen days, reachable only by the count
+   * on Clear All: *"there are just random comments that I don't see but they are there for some reason."*
+   *
+   * So the queue is what the agent has answered and the reviewer has not closed. `stale` keeps its own job,
+   * which is telling the reviewer whether the picture moved under their outline; it was never a statement
+   * about whose turn it is.
    */
   const toReview = useMemo(
     () =>
       visible.filter(
         (comment) =>
-          comment.consumedAt &&
-          comment.stale &&
-          (!comment.kind || comment.kind === "note"),
+          comment.consumedAt && (!comment.kind || comment.kind === "note"),
       ),
     [visible],
   );
@@ -1423,10 +1440,22 @@ export function CanvasView({
     [visible],
   );
 
+  /* A frame gets the pins whose HOME it is: the same screen is drawn once per group it belongs to, and a
+     comment is drawn on the frame of the group it was drawn in, or on the first frame carrying its screen
+     when that group is not on this tab. See `homeFrameOf`. */
+  const frames = useMemo(
+    () =>
+      layout.groups.flatMap((group) =>
+        group.nodes.map((node) => ({ screenId: node.screen.id, groupId: node.group.id })),
+      ),
+    [layout],
+  );
   const pinsFor = useCallback(
-    (screenId: string) =>
-      numbered.filter((pin) => pin.comment.screenId === screenId),
-    [numbered],
+    (screenId: string, groupId: string) =>
+      numbered.filter((pin) =>
+        belongsOnFrame(pin.comment, { screenId, groupId }, frames),
+      ),
+    [numbered, frames],
   );
 
   /* The frame knows its region and its picture; the declaration knows which flow it belongs to and what
@@ -1435,13 +1464,18 @@ export function CanvasView({
     async (comment: NewRegionComment) => {
       /* Both views, so a comment on an exploration direction records its question the same way a comment in a
          journey records its flow. */
-      const found = allScreens(declaration).find(
+      /* The frame says which group it was drawn in; the screen alone is ambiguous when it sits in several. */
+      const everywhere = allScreens(declaration).filter(
         (one) => one.screen.id === comment.screenId,
       );
+      const found =
+        everywhere.find((one) => one.groupId === comment.groupId) ??
+        everywhere[0];
+      const { groupId: drawnIn, ...record } = comment;
       setComments(
         await saveComment(canvas, {
-          ...comment,
-          flowId: found?.groupId ?? "",
+          ...record,
+          flowId: found?.groupId ?? drawnIn ?? "",
           label: found?.screen.label ?? comment.screenId,
           route: shots?.[comment.screenId]?.url ?? found?.screen.route ?? "",
           state: found?.screen.state ?? null,
@@ -1461,9 +1495,13 @@ export function CanvasView({
    */
   const focus = useCallback(
     (comment: CanvasComment) => {
-      const node = layout.groups
-        .flatMap((group) => group.nodes)
-        .find((one) => one.screen.id === comment.screenId);
+      /* The frame the comment was drawn on, when its group is recorded; else the first that shows the screen. */
+      const nodes = layout.groups.flatMap((group) => group.nodes);
+      const home = homeFrameOf(
+        comment,
+        nodes.map((one) => ({ screenId: one.screen.id, groupId: one.group.id, node: one })),
+      );
+      const node = home?.node;
       if (node) {
         const PADDING = 420;
         const region = comment.region;
@@ -1491,9 +1529,17 @@ export function CanvasView({
    */
   const onDelete = useCallback(
     async (id: string) => {
-      const before = comments.filter(
-        (comment) => comment.consumedAt && comment.stale,
-      );
+      /**
+       * THE SAME LIST THE BAR COUNTS, AND THE SAME INDEX SPACE THE STEPPER WALKS.
+       *
+       * This read every consumed-and-stale record in the file (older rounds, screens not on this tab, verdicts)
+       * and wrote that position straight into `at`, which indexes `[...newHere, ...toReview]`. Approving the first
+       * of ten turned the bar into "35 of 10". Owner, 2026-09-14: *"whenever I mark the first one as reviewed, it
+       * for some reason changes from 1 of 10 to something like 35 of 10… it just makes up a random number that
+       * messes up the whole review process."* So the position is taken inside `toReview` and offset past the new
+       * frames that lead the queue.
+       */
+      const before = toReview;
       const wasAwaiting = before.some((comment) => comment.id === id);
       /**
        * WHERE THE APPROVED ONE STOOD IN THE QUEUE, so the next one shown is the one AFTER it.
@@ -1507,22 +1553,23 @@ export function CanvasView({
       const list = await deleteComment(canvas, id);
       setComments(list);
       if (!wasAwaiting) return;
-      const queue = list.filter(
-        (comment) => comment.consumedAt && comment.stale,
-      );
-      if (queue.length === 0) {
+      const remaining = before.filter((comment) => comment.id !== id);
+      if (remaining.length === 0) {
         setAt(null);
         setOpenPin(null);
         return;
       }
       /* The list shrank under that position, so staying at it IS advancing — clamped for the last one. */
-      const index = Math.min(stood >= 0 ? stood : (at ?? 0), queue.length - 1);
-      setAt(index);
-      focus(queue[index]);
+      const index = Math.min(
+        stood >= 0 ? stood : Math.max((at ?? 0) - newHere.length, 0),
+        remaining.length - 1,
+      );
+      setAt(newHere.length + index);
+      focus(remaining[index]);
     },
     /* `canvas` was missing and the lint rule was right: a canvas switched under this callback would delete from
        the one it was created with. Harmless today, since the page remounts per slug, and cheap to be correct. */
-    [canvas, comments, at, focus],
+    [canvas, toReview, newHere, at, focus],
   );
 
   /** The reviewer rewriting their own words, from the pin. Awaited, so the pin closes on the saved text. */
@@ -1688,6 +1735,8 @@ export function CanvasView({
       setDevice: (next: CanvasDevice) => setDevice(next),
       devices: () => devices,
       setCommenting,
+      /* Open one comment's box, so the oracle can assert what is drawn under the pin (the answer). */
+      openPin: (id: string | null) => setOpenPin(id),
       read: () => surface.current?.read(),
       /* What is grouped with what, so the oracle can assert it rather than measure pixels for it. */
       groups: () =>
@@ -1763,10 +1812,11 @@ export function CanvasView({
       <CanvasFrame
         canvas={canvas}
         screen={node.screen}
+        groupId={node.group.id}
         shot={shots?.[node.screen.id] ?? null}
         manifestLoaded={shots !== null}
         scale={declaration.frameScale}
-        pins={pinsFor(node.screen.id)}
+        pins={pinsFor(node.screen.id, node.group.id)}
         revealed={revealed}
         isNew={isNew(node.screen.id)}
         /* The flow's own reading order: a column at a time, left to right, and nothing later than 240ms. */
@@ -1790,6 +1840,18 @@ export function CanvasView({
               setPendingFocus(other.id);
             },
           };
+        })()}
+        /**
+         * The switch to today's screen, on every exploration option and step. The layout resolved which screen
+         * (`node.today`: the frame's own `redesigns`, else the panel's `original`); this hands the frame that
+         * screen and its shot, so the flip needs nothing beyond the frame.
+         */
+        today={(() => {
+          if (view !== "explore" || node.incumbent || !node.today) return undefined;
+          const screen = permanentById.get(node.today);
+          return screen
+            ? { screen, shot: shots?.[screen.id] ?? null }
+            : undefined;
         })()}
         /* Notes, not verdicts: the next pin's number has to match the numbering above. */
         nextNumber={numbered.length + 1}
@@ -2378,6 +2440,21 @@ export function CanvasView({
                    * One press arms it and says what the number is; the second does it. Not a dialog: PRODUCT.md
                    * bans stacking a modal on an open surface, and this panel is already the surface. It disarms
                    * when the panel closes, so the armed state can never be left lying around.
+                   *
+                   * THE NUMBER IS `comments.length`, AND IT USED TO BE THE ONLY HONEST THING ON THE PANEL.
+                   *
+                   * Every other count here is filtered, each filter added on the owner's own feedback, and this
+                   * one reaches past all of them into the raw array — which is right, because it is a statement
+                   * about what the press destroys and the press destroys the file. What was wrong is that the
+                   * file held records no other count could ever reach, so the first and only place he met them
+                   * was the arming step of an irreversible button: *"the handoff says that there is one comment,
+                   * and there was actually one comment. But when I clicked clear all, it tells me that there is
+                   * 13 comments to clear. So how is that possible?"* Nine spent verdicts, two answered notes.
+                   *
+                   * It cannot disagree any more, and not because this line changed. A record is now in exactly
+                   * one of three places: unread in the hand-off, answered in the review bar, or deleted — by the
+                   * route when a verdict is consumed, and by `capture.mjs` when the screen it pointed at goes.
+                   * Keep that invariant and this number is the sum of the two above it, by construction.
                    */}
                   <button
                     type="button"

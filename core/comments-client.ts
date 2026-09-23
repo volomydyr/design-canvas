@@ -137,6 +137,36 @@ export type NewComment = {
   state?: string | null;
 };
 
+/**
+ * Which frame a saved comment is drawn on, when the same screen is drawn once per group. The frame of the group
+ * it was drawn in when that group is on the canvas; else the first frame that carries the screen, so a comment
+ * never goes homeless: one made on the grouped view (its `flowId` is a flow, not an exploration) still shows
+ * on the exploration tab, on the incumbent's first copy, and one made before groups were recorded (no
+ * `flowId`) behaves the same. Owner, 2026-09-21: "it actually duplicates it as many as there are groups";
+ * 2026-09-22, after the first fix drew such a comment nowhere: "it always says there's a comment #5 (the last
+ * one) that simply doesn't lead anywhere".
+ */
+export function homeFrameOf<T extends { screenId: string; groupId: string }>(
+  comment: { screenId: string; flowId?: string },
+  frames: T[],
+): T | undefined {
+  const same = frames.filter((frame) => frame.screenId === comment.screenId);
+  return (
+    same.find((frame) => Boolean(comment.flowId) && frame.groupId === comment.flowId) ??
+    same[0]
+  );
+}
+
+/** Whether a saved comment belongs on THIS frame: the frame is its home among `frames`. */
+export function belongsOnFrame<T extends { screenId: string; groupId: string }>(
+  comment: { screenId: string; flowId?: string },
+  frame: T,
+  frames: T[],
+): boolean {
+  const home = homeFrameOf(comment, frames);
+  return home != null && home.screenId === frame.screenId && home.groupId === frame.groupId;
+}
+
 export async function saveComment(
   canvas: string,
   comment: NewComment,

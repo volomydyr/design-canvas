@@ -33,6 +33,7 @@ import {
   IconOpenExternal,
   IconPhone,
   IconSpinner,
+  IconToday,
 } from "./icons";
 import type {
   CanvasComment,
@@ -213,6 +214,8 @@ export type FramePin = {
 
 export type NewRegionComment = {
   screenId: string;
+  /** The flow or exploration the frame was drawn in — the same screen can sit in several. See `belongsOnFrame`. */
+  groupId: string;
   region: CanvasRegion;
   note: string;
   /** The shot with the outline drawn on it, as a data URL. Written to a file beside the JSON. */
@@ -223,6 +226,7 @@ export type NewRegionComment = {
 export function CanvasFrame({
   canvas,
   screen,
+  groupId,
   shot,
   manifestLoaded,
   scale,
@@ -241,6 +245,7 @@ export function CanvasFrame({
   openPin,
   onOpenPin,
   onTwin,
+  today,
   chromeW,
   revealed = true,
   entranceDelay = 0,
@@ -258,6 +263,17 @@ export function CanvasFrame({
    * canvas but for mobile."* So it is an icon, it sits with Open, and it moves the canvas rather than the page.
    */
   onTwin?: { device: CanvasDevice; go: () => void } | null;
+  /**
+   * TODAY'S SCREEN, for the switch under an exploration option. The screen this frame redesigns (its own
+   * `redesigns`, else the panel's `original`) and that screen's shot. Pressed, the frame shows that shot in
+   * place at its own size, the caption reads "Today: …", the pins and the Wireframe pill step aside, and a
+   * second press brings the option back. Absent everywhere but the exploration, and on the incumbent itself.
+   *
+   * In place rather than a jump: the owner asked for a switch that "flips it to the original screen it
+   * redesigns" so a dialog wireframe is judged against today's dialog where it sits, not after panning back
+   * to the panel's first frame.
+   */
+  today?: { screen: CanvasScreen; shot: CanvasShot | null } | null;
   /**
    * How wide this frame's caption and foot may be, in world units, which is not always the picture's width.
    *
@@ -306,6 +322,8 @@ export function CanvasFrame({
   manifestLoaded: boolean;
   /** How much of real size the picture is drawn at on the canvas. */
   scale: number;
+  /** The group this frame is drawn in, so its pins and its new comments are its own. */
+  groupId: string;
   pins: FramePin[];
   /** The number the next comment anywhere on the canvas will carry, burned into its picture. */
   nextNumber: number;
@@ -503,6 +521,7 @@ export function CanvasFrame({
     try {
       await onSave({
         screenId: screen.id,
+        groupId,
         region: draft,
         note: note.trim(),
         image,
@@ -520,8 +539,10 @@ export function CanvasFrame({
    * since, so there is something new to look at. Before both of those, the comment is still an instruction
    * and the actions are Edit and Delete.
    */
+  /* Recaptured, or ANSWERED: a question the agent replied to under the pin is the reviewer's to close too. */
   const reviewable = (comment: CanvasComment) =>
-    Boolean(comment.consumedAt) && comment.stale === true;
+    Boolean(comment.consumedAt) &&
+    (comment.stale === true || Boolean(comment.answer));
 
   /** Another round on a comment already answered: new words, new picture, back into the agent's queue. */
   const sendFeedback = async () => {
@@ -584,12 +605,21 @@ export function CanvasFrame({
    * The frame already knows the answer — it is rendering one canvas — so it says so rather than letting the
    * route guess.
    */
+  /**
+   * THE SWITCH TO TODAY, held here because it is this frame's own business: which picture it shows. While
+   * flipped, everything below reads `pictured` rather than `shot`, so the same frame photographs today's
+   * screen at the option's size.
+   */
+  const [showingToday, setShowingToday] = useState(false);
+  const flipped = showingToday && today ? today : null;
+  const pictured = flipped ? flipped.shot : shot;
+  const picturedId = flipped ? flipped.screen.id : screen.id;
   const src = useMemo(
     () =>
-      shot
-        ? `/api/design-canvas/shots?canvas=${encodeURIComponent(canvas)}&id=${encodeURIComponent(screen.id)}&v=${shot.hash}`
+      pictured
+        ? `/api/design-canvas/shots?canvas=${encodeURIComponent(canvas)}&id=${encodeURIComponent(picturedId)}&v=${pictured.hash}`
         : null,
-    [canvas, shot, screen.id],
+    [canvas, pictured, picturedId],
   );
 
   /* After `src`, because it is what this watches: a new picture for the same frame goes back to the skeleton. */
@@ -662,6 +692,7 @@ export function CanvasFrame({
       }}
       data-canvas-screen={screen.id}
       data-canvas-incumbent={incumbent ? "true" : undefined}
+      data-canvas-showing={flipped ? "today" : undefined}
     >
       {/**
        * ABOVE THE FRAME: its title, when the screens are grouped, and nothing else. It carried a state chip and
@@ -694,8 +725,12 @@ export function CanvasFrame({
             style={{ fontSize: NAME_SIZE, lineHeight: 1.15 }}
           >
             {/* The incumbent says what it is the same way the options say their number: as plain text. */}
-            {incumbent ? "Today: " : optionNumber ? `${optionNumber}. ` : ""}
-            {screen.label}
+            {flipped || incumbent
+              ? "Today: "
+              : optionNumber
+                ? `${optionNumber}. `
+                : ""}
+            {flipped ? flipped.screen.label : screen.label}
           </span>
 
           {/**
@@ -796,26 +831,65 @@ export function CanvasFrame({
         style={{ marginTop: FOOT_GAP, gap: 12, width: chromeW ?? "100%" }}
         data-canvas-chrome=""
       >
-        <a
-          href={shot?.url ?? screen.route}
-          target="_blank"
-          rel="noreferrer"
-          /* Solid white: this is the way from a picture back to the running page, and the whole reason the
-             frames could be turned into pictures at all. It should be the first thing found under a frame. */
-          className="inline-flex shrink-0 items-center justify-center rounded-full bg-white font-medium text-[hsl(180_15%_5.5%)] transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/85"
-          style={{
-            fontSize: META_SIZE,
-            lineHeight: 1,
-            height: BUTTON_H,
-            width: BUTTON_W,
-            gap: 8,
-          }}
-          title={`Open ${shot?.url ?? screen.route} in a new tab`}
-          data-canvas-open=""
-        >
-          Open
-          <IconOpenExternal size={META_SIZE + 1} />
-        </a>
+        {/**
+         * THE SWITCH TO TODAY'S SCREEN, first in the row on every exploration option.
+         *
+         * Outlined like the twin button while the option shows, solid like Open while today does, so the row
+         * says which of the two pictures is in the frame. An icon and no word, for the same reason as the twin:
+         * a phone frame's foot has no room for a second pill. Its tooltip carries the words.
+         */}
+        {today ? (
+          <CanvasTooltip
+            mark={0}
+            compact
+            label={
+              <button
+                type="button"
+                onClick={() => setShowingToday((on) => !on)}
+                aria-pressed={Boolean(flipped)}
+                className={cn(
+                  "inline-flex shrink-0 items-center justify-center rounded-full font-medium transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)]",
+                  flipped
+                    ? "bg-white text-[hsl(180_15%_5.5%)] hover:bg-white/85"
+                    : "text-white ring-1 ring-white/[0.22] hover:bg-white/[0.12]",
+                )}
+                style={{ height: BUTTON_H, width: BUTTON_H, lineHeight: 1 }}
+                data-canvas-today={today.screen.id}
+              >
+                <IconToday size={META_SIZE + 2} />
+              </button>
+            }
+          >
+            {/* Short and generic, no full stop: a hint on an icon, the owner's copy rule. */}
+            {flipped ? "Show the redesign" : "Show today's version"}
+          </CanvasTooltip>
+        ) : null}
+
+        {/* NO OPEN ON A WIREFRAME. There is no running page behind it, only the static HTML the picture was
+            taken of; a button that opened that file would promise a screen that does not exist. The pill that
+            takes its place (below, beside the badges) says what the frame is instead. */}
+        {screen.wireframe ? null : (
+          <a
+            href={shot?.url ?? screen.route}
+            target="_blank"
+            rel="noreferrer"
+            /* Solid white: this is the way from a picture back to the running page, and the whole reason the
+               frames could be turned into pictures at all. It should be the first thing found under a frame. */
+            className="inline-flex shrink-0 items-center justify-center rounded-full bg-white font-medium text-[hsl(180_15%_5.5%)] transition-colors duration-[220ms] ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-white/85"
+            style={{
+              fontSize: META_SIZE,
+              lineHeight: 1,
+              height: BUTTON_H,
+              width: BUTTON_W,
+              gap: 8,
+            }}
+            title={`Open ${shot?.url ?? screen.route} in a new tab`}
+            data-canvas-open=""
+          >
+            Open
+            <IconOpenExternal size={META_SIZE + 1} />
+          </a>
+        )}
 
         {/**
          * THE SAME SCREEN ON THE OTHER DEVICE, and it moves the canvas rather than opening anything.
@@ -882,7 +956,27 @@ export function CanvasFrame({
             not what it claims
           </span>
         ) : null}
-        {shownSource.map((file) => (
+        {screen.wireframe && !flipped ? (
+          <span
+            className="shrink-0 rounded-full bg-white/[0.09] font-medium text-white/60"
+            style={{
+              fontSize: META_SIZE,
+              lineHeight: 1.5,
+              padding: "6px 14px",
+            }}
+            title={
+              screen.still
+                ? "A screenshot of the real app, driven into this state by hand: no URL lands here, so nothing to open"
+                : "A lo-fi wireframe served outside the app: nothing to open, no component behind it yet"
+            }
+            data-canvas-wireframe={screen.still ? "still" : ""}
+          >
+            {screen.still ? "Still" : "Wireframe"}
+          </span>
+        ) : null}
+        {flipped
+          ? null
+          : shownSource.map((file) => (
           <span
             key={file}
             className="shrink-0 rounded-full bg-white/[0.09] font-mono text-white/60"
@@ -896,7 +990,7 @@ export function CanvasFrame({
             {badgeFor(file)}
           </span>
         ))}
-        {hiddenSource.length > 0 ? (
+        {!flipped && hiddenSource.length > 0 ? (
           <CanvasTooltip
             title="Also built from"
             /* No mark: the badge is already visibly a stand-in for what it is not showing. */
@@ -930,7 +1024,9 @@ export function CanvasFrame({
        * containment clips: the note box was being cut off at the edge of the screenshot it belonged to.
        */}
       <div
-        className="relative h-full w-full bg-white/[0.04]"
+        /* White behind today's picture: it is drawn to fit the option's frame, and the band it does not fill
+           reads as paper rather than as a hole in the canvas. */
+        className={cn("relative h-full w-full", flipped ? "bg-white" : "bg-white/[0.04]")}
         style={{
           /* A failed claim outranks everything: a frame that does not prove what it says is a bug, and a new
              frame is only news. */
@@ -980,9 +1076,9 @@ export function CanvasFrame({
             <img
               ref={imageRef}
               src={src}
-              alt={screen.label}
-              width={shot?.w}
-              height={shot?.h}
+              alt={flipped ? flipped.screen.label : screen.label}
+              width={pictured?.w}
+              height={pictured?.h}
               loading="lazy"
               decoding="async"
               draggable={false}
@@ -992,6 +1088,8 @@ export function CanvasFrame({
               style={MOTION_STYLE}
               className={cn(
                 "relative h-full w-full select-none transition-opacity motion-reduce:transition-none",
+                /* Today's shot keeps its own proportions inside the option's frame, pinned to the top left. */
+                flipped ? "object-contain object-left-top" : "",
                 loaded ? "opacity-100" : "opacity-0",
               )}
             />
@@ -1011,14 +1109,17 @@ export function CanvasFrame({
         ref={boxRef}
         className={cn(
           "absolute inset-0",
-          commenting ? "cursor-crosshair" : "pointer-events-none",
+          /* No comments on today's picture: a note drawn here would be filed on the option. */
+          commenting && !flipped ? "cursor-crosshair" : "pointer-events-none",
         )}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       >
-        {/* Saved comments: the region, and a marker that opens it. */}
-        {pins.map(({ comment, n }) => (
+        {/* Saved comments: the region, and a marker that opens it. Hidden while the frame shows today. */}
+        {flipped
+          ? null
+          : pins.map(({ comment, n }) => (
           <div key={comment.id}>
             <div
               className="pointer-events-none absolute"
@@ -1080,6 +1181,26 @@ export function CanvasFrame({
                 <p className="pr-9 text-[0.875rem] leading-snug text-white">
                   {comment.note}
                 </p>
+
+                {/**
+                 * THE AGENT'S ANSWER, under the words it answers. A comment that asked something gets its reply
+                 * here rather than in a chat the reviewer has to scroll back through; the owner asked for exactly
+                 * this after reading one explanation in chat only. Quieter than the note, set off by a rule, with
+                 * a small label so it is never mistaken for the reviewer's own words.
+                 */}
+                {comment.answer ? (
+                  <div
+                    className="mt-3 border-l-2 border-white/[0.18] pl-3"
+                    data-canvas-answer={comment.id}
+                  >
+                    <div className="text-[0.6875rem] font-medium text-white/50">
+                      Answer
+                    </div>
+                    <p className="mt-1 pr-6 text-[0.8125rem] leading-snug text-white/85">
+                      {comment.answer.text}
+                    </p>
+                  </div>
+                ) : null}
 
                 {/**
                  * WHAT A PIN OFFERS DEPENDS ON WHETHER IT HAS BEEN ACTED ON AND PHOTOGRAPHED AGAIN, and the

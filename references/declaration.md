@@ -124,6 +124,55 @@ oracle fails a panel whose rendered kind differs from the declared one):
 { id: "quote-complete", label: "Complete Order in Quotes", explain: "…", explainKind: "canvas:quotes" },
 ```
 
+## A structure before there is code: the wireframe frame
+
+When the question is not "which of these built directions" but "how should this whole area be shaped",
+building directions into the app is the wrong first spend. Draw them as lo-fi HTML instead — black and
+white, rectangles, real copy, the hierarchy in size and weight only, nothing else — serve them from a folder
+OUTSIDE the app, and declare each as a `wireframe`:
+
+```ts
+// On the canvas: where the static files are served.
+wireframeBase: "http://localhost:3070",
+// On the option: the file, and nothing else that would point into the app.
+{ id: "stock-landing-a", label: "Four pages, the books as the landing",
+  note: "Stock, Receiving, Memo and Stock Counts as sidebar pages; the Overview table lands first.",
+  wireframe: "stock-landing-a.html", expect: ["On Hand", "Awaiting handover"] },
+```
+
+The rules:
+
+- No `route`, no `source`, no `kind`. The oracle skips its live pass and its source note; the frame draws a
+  `Wireframe` pill where Open would be, because there is no running page to go back to.
+- `expect` still applies and is still proved: the claims are the words on the wireframe, and a wireframe
+  whose words are not there is as wrong as a screen's.
+- The picture is stamped with the served HTML's hash, so editing the file recaptures it on the next run
+  without `--only`.
+- It belongs on the exploration tab, as an option under an `original` that IS a captured screen of today's
+  design. A wireframe can be an option; it is never the original.
+
+### The switch to today's screen, and `redesigns`
+
+Every exploration frame but the incumbent carries a switch that flips it in place to the screen it redesigns,
+and every exploration screen has to say which one that is — the same STATE in today's app, or `null`:
+
+```ts
+{ id: "ov-update-adjust", label: "Adjust a Count", wireframe: "ov-update-adjust.html",
+  under: "ov-products", redesigns: "stock-update-dialog", expect: ["Adjust", "Reason"] },
+```
+
+- `redesigns` names a screen the PERMANENT views draw, like `original`; the oracle fails a missing one, any
+  other id, and a frame that names an exploration frame.
+- It is the SAME STATE, never the nearest page: an empty tab flips to today's empty tab, a filtered list to
+  today's filtered list, a dialog to today's dialog. Owner: _"don't end up showing the same freaking screen for
+  many, many different screens … even like empty states."_
+- `null` means the old code has nothing like this frame, and the frame draws no switch. It is the only
+  alternative to an id, and it is a statement, not a shortcut.
+- It follows that every one of those states has to exist as a captured screen first. That is pin work in the
+  app (a URL that lands on the state), and it is the real cost of the switch on a large round.
+- The static server is the project's business (a twenty-line node file beside the HTML is enough); the
+  canvas only needs its address.
+
 ## An option that needs more than one screen
 
 One frame per option is usually right, and it stops being right the moment the option's whole idea needs more: a

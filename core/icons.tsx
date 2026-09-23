@@ -245,6 +245,20 @@ export function IconPhone(props: IconProps) {
   );
 }
 
+/**
+ * TODAY'S SCREEN, under an exploration frame: the switch that flips an option to the screen it redesigns and
+ * back. A clock face, because "today" is a point in time and the frame it flips to is the one already shipped.
+ * Same 24-box, same stroke, as every other glyph here.
+ */
+export function IconToday(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="8.75" />
+      <path d="M12 7.5V12l3 2" />
+    </Svg>
+  );
+}
+
 export function IconLike(props: IconProps) {
   return (
     <Svg {...props}>

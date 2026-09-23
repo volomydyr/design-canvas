@@ -200,7 +200,8 @@ NEXT_PUBLIC_CANVAS_VIEW_ONLY=1 NEXT_PUBLIC_CANVAS_PINS=1 npm run build
   disabled — absent: no Comment button, no Hand Off, no Clear All, no drag. Writes are refused at the route with
   405 as well, because a client is not a permission system. There are no pins to draw either: the comment file is
   gitignored, so a deployment has no review in it.
-- **`NEXT_PUBLIC_CANVAS_PINS=1`** is not optional here. Every frame carries an Open button to the real route with
+- **`NEXT_PUBLIC_CANVAS_PINS=1`** is not optional here (it is only for BUILDS; a dev server pins without it, through
+  `canvasPinsAllowed()` in the project's states file, which every app-code reader must use). Every frame carries an Open button to the real route with
   `?canvas=<state>`, and without pins those states do not apply — the button would land on the resting page and
   quietly lie. Setting it also means anyone with the URL can force the app's review-only states.
 - **The pictures have to be traced into the function bundle.** They live in `design-canvas/shots/`, outside

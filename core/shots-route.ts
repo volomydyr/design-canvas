@@ -58,6 +58,18 @@ export function screenUrl(
 }
 
 /**
+ * The address a lo-fi WIREFRAME is captured at: absolute as declared, or its path joined onto the canvas's
+ * `wireframeBase`. Always absolute on the way out, because the capture prefixes its own app base onto every
+ * other screen's url and must not onto this one — the wireframe is served by a different process on purpose
+ * (`CanvasScreen.wireframe`).
+ */
+export function wireframeUrl(wireframe: string, base?: string): string {
+  if (/^https?:\/\//.test(wireframe)) return wireframe;
+  const root = (base ?? "").replace(/\/$/, "");
+  return `${root}/${wireframe.replace(/^\//, "")}`;
+}
+
+/**
  * One canvas or several, from the same argument.
  *
  * A single declaration is still accepted because the route stub in every project installed before canvases
@@ -178,6 +190,10 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             screens: one.screens.map((screen) => ({
               id: screen.id,
               under: screen.under ?? null,
+              /* What today's screen of the SAME state is, or null for nothing today. Left OUT of the JSON when
+                 the declaration never said (undefined), which is what the oracle refuses — the projection trap
+                 held this check silent for one whole run. */
+              ...(screen.redesigns === undefined ? {} : { redesigns: screen.redesigns }),
             })),
           })),
           /* Canvas-wide forbidden text (overlay tripwire) — served, or the capture never hears of it. */
@@ -196,8 +212,16 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
             soloKind: screen.soloKind ?? false,
             /* The line under the frame. Served for the copy checker; nothing else downstream reads it. */
             note: screen.note,
-            /* Null on an explanation frame: nothing to visit, nothing to capture. */
-            url: screenUrl(screen.route, screen.state),
+            /* Null on an explanation frame: nothing to visit, nothing to capture. Absolute on a wireframe:
+               it is served by another process, so the capture must not prefix the app's base onto it. */
+            url: screen.wireframe
+              ? wireframeUrl(screen.wireframe, declaration.wireframeBase)
+              : screenUrl(screen.route, screen.state),
+            /* Served, or the frame draws an Open button onto a page that does not exist and the oracle sends
+               its live pass at a static file — the projection trap, once more. */
+            wireframe: Boolean(screen.wireframe),
+            /* A hand-driven screenshot of the real app rather than a drawing: the frame's pill says Still. */
+            still: Boolean(screen.still),
             explain: screen.explain ?? null,
             /* Which kind of non-photographed step: "outside" | "product" | "canvas:<slug>". Served so
                the oracle can hold the rendered chrome against the declaration. */

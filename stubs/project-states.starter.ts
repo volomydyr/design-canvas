@@ -34,8 +34,50 @@ const STATES: Record<string, () => void> = {
    */
 };
 
+/**
+ * MAY A STATE BE PINNED IN THIS BUILD? Development always; a production build only when it opted in.
+ *
+ *   return process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_CANVAS_PINS === "1";
+ *
+ * Both halves are load-bearing and each was got wrong once, in opposite directions:
+ *   - `NODE_ENV !== "production"` alone: captures run against a PRODUCTION build (dev compiles routes
+ *     inside the capture's load budget and fails a different screen every run), and under that guard a
+ *     build pinned NOTHING while every tile went on claiming its state.
+ *   - `NEXT_PUBLIC_CANVAS_PINS === "1"` alone: a plain `npm run dev` pinned nothing either, so a teammate
+ *     who checked the branch out and pressed Open landed on the resting page under every frame, with no
+ *     error to say why. Owner, 2026-09-04, on being told the flag was needed: "it still sounds like
+ *     overengineering. why can't open buttons just open what's needed without any pins?"
+ *
+ * `NEXT_PUBLIC_*` is inlined at BUILD time, so an ordinary production build compiles the second half to
+ * `false` and the pins cannot be reached however the URL is crafted. Turning them on in production is a
+ * deliberate act by somebody capturing or deploying a canvas, greppable in one place.
+ *
+ * EVERY READER OF A CANVAS URL PARAM IN APP CODE GOES THROUGH THIS FUNCTION. Never test the env variable
+ * directly at a call site: twelve hand-written `=== "1"` checks in one project were the second failure.
+ */
+export function canvasPinsAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_CANVAS_PINS === "1";
+}
+
+/**
+ * IS THIS PAGE BEING PHOTOGRAPHED? True only inside `capture.mjs`'s browser, which sets
+ * `window.__designCanvasCapture` before any app code runs.
+ *
+ * A pin means "open this state"; this means "a frame is being taken of it". Keep them apart. A shortcut that
+ * exists only to make a PICTURE sensible (a list painted with eight rows so a dialog frame is not captured down to
+ * row fifty) goes behind BOTH, never behind the pin alone: the Open button carries the very same URL, and a list
+ * that stops at eight for the person who pressed it reads as a broken product. Owner, 2026-09-14: "it's okay to
+ * use such an approach just to capture a screen but it should never be like that when I open it through the open
+ * button." Prefer the declaration's `oneViewport` over any shortcut at all: frame height belongs to the capture.
+ */
+export function canvasCapturing(): boolean {
+  if (!canvasPinsAllowed() || typeof window === "undefined") return false;
+  return (window as Window & { __designCanvasCapture?: boolean }).__designCanvasCapture === true;
+}
+
 /** The state this document was asked to show, or null when it is not a canvas frame. */
 export function canvasStateId(): string | null {
+  if (!canvasPinsAllowed()) return null;
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get(CANVAS_STATE_PARAM);
 }

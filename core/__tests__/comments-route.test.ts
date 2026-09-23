@@ -150,6 +150,23 @@ describe("the canvas comments route's PATCH", () => {
     expect((await response.json()).error).toContain("c9999");
   });
 
+  /**
+   * AN ANSWER IS ONE COMMENT'S, AND IT HAS WORDS. Both refusals happen before the file is touched: an empty
+   * answer would consume a question with nothing drawn under it, and one text on several ids would pin the same
+   * sentence to different questions.
+   */
+  it("refuses an empty answer", async () => {
+    const response = await patch({ id: "c1", answer: "   " });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("answer");
+  });
+
+  it("refuses one answer on several ids", async () => {
+    const response = await patch({ ids: ["c1", "c2"], answer: "the count is an aggregate" });
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain("one id at a time");
+  });
+
   it("names the canvas it looked in, because the wrong slug is the likeliest cause", async () => {
     const response = await patch({ id: "c9999", consumed: true });
     expect((await response.json()).error).toContain("nosuchcanvas");

@@ -75,7 +75,8 @@ If a project does want one, the shape is settled and the constraint is the inter
    buttons, which is what a deployed canvas is actually good for — a team reading the surfaces and clicking
    through to real pages.
 4. **Pinned states need their own flag on the deploy** (`NEXT_PUBLIC_CANVAS_PINS=1`), or every Open button
-   lands on the route's default state rather than the state its frame shows.
+   lands on the route's default state rather than the state its frame shows. On a dev server no flag is needed:
+   `canvasPinsAllowed()` is dev OR flag, and every reader in app code goes through it, never the env variable.
 
 ## 4. What the canvas structurally cannot show
 

@@ -391,6 +391,7 @@ Each canvas is addressed by its slug, and the slug namespaces its pictures and i
   /design-canvas/<slug>                     the canvas
   design-canvas/shots/<slug>/               its pictures
   design-canvas/comments/<slug>.json        its review
+  design-canvas/comments/.history           every review's history, a git repo of its own
 
 Then, per canvas:
   node design-canvas/capture-run.mjs --canvas <slug> && node design-canvas/check-canvas.mjs --canvas <slug>

@@ -29,7 +29,7 @@
  * whatever the caller passes as `label`, with the mark inside it, and one hover region around both.
  */
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { MOTION_STYLE, PANEL_MOTION, useOpenState } from "./canvas-motion";
@@ -63,11 +63,12 @@ export function CanvasTooltip({
   children,
   mark = 15,
   className = "",
+  compact = false,
 }: {
   /** The visible trigger. Hovering ANY of it opens the panel, the mark included. */
   label: ReactNode;
-  /** The panel's heading. One short noun phrase. */
-  title: string;
+  /** The panel's heading. One short noun phrase. Omitted with `compact`, where the body is the whole of it. */
+  title?: string;
   /** The panel's body. */
   children: ReactNode;
   /**
@@ -84,8 +85,16 @@ export function CanvasTooltip({
    */
   mark?: number;
   className?: string;
+  /**
+   * A SHORT HINT FOR AN ICON BUTTON: body text only, as wide as its words, centred on the trigger and sitting
+   * right against it. The owner, on the switch to today's screen: _"why does the tooltip appear so far away?
+   * Shouldn't it be like right near where I'm hovering? And also I think it does not need a title. You just
+   * need a body text, something very short and generic."_
+   */
+  compact?: boolean;
 }) {
   const hostRef = useRef<HTMLSpanElement | null>(null);
+  const panelRef = useRef<HTMLSpanElement | null>(null);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   /**
    * HOVERED AND PRESENT ARE TWO DIFFERENT THINGS, which is what buys the exit animation.
@@ -127,6 +136,28 @@ export function CanvasTooltip({
     });
   }, []);
 
+  /**
+   * THE REAL PANEL, MEASURED, once it exists. `place` runs before the panel is in the document, so it guessed
+   * the panel's height (170px) whenever it opened above, and a two-line hint floated a hundred pixels over the
+   * thing it named. Measured here, it sits exactly `GAP` from the trigger, above or below, and a compact one is
+   * centred on it.
+   */
+  useLayoutEffect(() => {
+    const node = hostRef.current;
+    const panel = panelRef.current;
+    if (!present || !node || !panel) return;
+    const rect = node.getBoundingClientRect();
+    const size = panel.getBoundingClientRect();
+    const wantLeft = compact ? rect.left + rect.width / 2 - size.width / 2 : rect.right - size.width;
+    const left = Math.min(Math.max(MARGIN, wantLeft), window.innerWidth - size.width - MARGIN);
+    const below = rect.bottom + GAP;
+    const top =
+      below + size.height <= window.innerHeight - MARGIN
+        ? below
+        : Math.max(MARGIN, rect.top - GAP - size.height);
+    if (!at || Math.abs(at.left - left) > 0.5 || Math.abs(at.top - top) > 0.5) setAt({ left, top });
+  }, [present, at, compact]);
+
   /* Re-placed while it is open, because the canvas can be panned or zoomed under it with a trackpad without
      the pointer ever leaving the trigger. */
   useEffect(() => {
@@ -149,7 +180,7 @@ export function CanvasTooltip({
       className={`relative inline-flex cursor-help items-center gap-1.5 align-middle ${className}`}
       tabIndex={0}
       role="note"
-      aria-label={title}
+      aria-label={title ?? (typeof children === "string" ? children : undefined)}
       onPointerEnter={() => {
         place();
         setHovered(true);
@@ -166,19 +197,31 @@ export function CanvasTooltip({
       {present && at
         ? createPortal(
             <span
-              className={`${PANEL} ${PANEL_MOTION}`}
+              ref={panelRef}
+              className={`${PANEL} ${PANEL_MOTION}${compact ? " px-3 py-2" : ""}`}
               data-open={open}
-              style={{ ...MOTION_STYLE, left: at.left, top: at.top, width: WIDTH }}
+              style={{
+                ...MOTION_STYLE,
+                left: at.left,
+                top: at.top,
+                ...(compact ? { width: "max-content", maxWidth: WIDTH } : { width: WIDTH }),
+              }}
               /* It is an explanation, not a surface: the pointer passes through it, so leaving the trigger
                  always closes it and it can never trap a click meant for the canvas. */
               role="tooltip"
             >
-              <span className="block text-[0.8125rem] font-semibold text-white">
-                {title}
-              </span>
-              <span className="mt-1.5 block text-[0.75rem] leading-relaxed text-white/60">
-                {children}
-              </span>
+              {compact ? (
+                <span className="block text-[0.8125rem] font-medium text-white">{children}</span>
+              ) : (
+                <>
+                  <span className="block text-[0.8125rem] font-semibold text-white">
+                    {title}
+                  </span>
+                  <span className="mt-1.5 block text-[0.75rem] leading-relaxed text-white/60">
+                    {children}
+                  </span>
+                </>
+              )}
             </span>,
             document.body,
           )

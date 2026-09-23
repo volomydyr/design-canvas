@@ -41,7 +41,9 @@ Two things that will bite:
 
 - **A `NEXT_PUBLIC_*` flag is inlined at build time.** An ordinary build compiles it to `false`, and every
   pinned state silently becomes the route's default while the tiles still claim the special case. Whatever
-  gates state pinning has to allow a build to opt in — see `canvasPinsAllowed()` in the starter states file.
+  gates state pinning has to allow a build to opt in — `canvasPinsAllowed()` in the starter states file, dev OR
+  flag. Every reader of a canvas param in app code calls it; a call site that tests the env variable itself is
+  off on a plain dev server, and nothing tells the person pressing Open.
 - **Never run a build while a dev server is up.** They share `.next` and corrupt each other; it surfaces as
   `TypeError: Cannot read properties of undefined (reading 'call')` from `webpack-runtime.js`, which reads
   like an application bug and is not one. The canvas VIEWER and `check-canvas.mjs` still want the dev
@@ -153,8 +155,20 @@ Drag a rectangle on a frame, type, save. Two artefacts, and the second one is th
 - `design-canvas/comments/<id>.png` — **the captured screen with that rectangle drawn on it**, numbered to
   match the pin on the canvas.
 
+- `design-canvas/comments/.history` — **a git repository of its own**, holding the record files and nothing
+  else. Every write to a review lands as a commit named for what happened ("orders: consumed c37", "quotes:
+  approved c4, c5"), so `git log -p` is the durable history of a review and the only place a deleted comment's
+  words survive. It sits INSIDE the ignored folder, so the project's own git never sees it: no megabytes of
+  PNGs in the app's history, and no merge conflict inside somebody's feedback. Records only, for that reason.
+
 Both gitignored, and the handoff panel says so out loud, because a reviewer should never have to wonder
 whether this tool is accumulating files in their repository.
+
+**A REVIEW IS THREE PLACES AND NO MORE.** Every record is unread in the hand-off, a consumed note in the review
+bar, or deleted — a consumed verdict by the route, and an answered comment whose screen has left the
+declaration by the next capture, with its annotated PNG. An unread note survives its screen and keeps
+travelling, which is the one exception and is deliberate. Keep that list exhaustive: the moment a record can
+sit outside all three it becomes invisible work that only the Clear All count can see (trap 25).
 
 **Why a region and not a selector.** With no document under the cursor there is nothing to hit-test, and
 the types file says so plainly rather than pretending: _"A selector is not available here and pretending

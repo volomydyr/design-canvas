@@ -112,6 +112,11 @@ export type LaidOutNode = {
   option?: number;
   /** Exploration only: the panel's first frame is TODAY'S design, drawn as reference. See `CanvasExploration.original`. */
   incumbent?: boolean;
+  /**
+   * Exploration only: the id of the screen this frame's switch flips to, its own `redesigns`. Absent on the
+   * incumbent and on a frame that declared `redesigns: null` (nothing like it exists today), which draw no switch.
+   */
+  today?: string;
   /** Exploration only: a later STEP of an option's flow rather than an option of its own. See `CanvasScreen.under`. */
   supporting?: boolean;
   /** Flows only: this node is an explanation panel, not a picture. See `CanvasScreen.explain`. */
@@ -1020,6 +1025,25 @@ export function layoutExplorations(
       problems.push(
         `exploration ${exploration.id}: no original — every panel opens with today's design as its first frame`,
       );
+    /**
+     * A FRAME MAY NAME A NARROWER TODAY. `redesigns` points the switch under an option at the dialog or tab it
+     * redesigns rather than at the whole page; it has to be a screen the permanent views draw, like `original`.
+     */
+    const permanentIds = new Set(
+      declaration.flows.flatMap((flow) => flow.screens).map((screen) => screen.id),
+    );
+    for (const screen of exploration.screens) {
+      if (screen.redesigns === undefined)
+        problems.push(
+          `exploration ${exploration.id}: "${screen.id}" does not say what it redesigns — name today's screen of the SAME state, or null when nothing like it exists today`,
+        );
+      else if (screen.redesigns !== null && !permanentIds.has(screen.redesigns))
+        problems.push(
+          `exploration ${exploration.id}: "${screen.id}" redesigns "${screen.redesigns}", which is not a screen the flows declare`,
+        );
+    }
+    /* No fallback to the panel's page: the same picture under many different frames is the mistake this rule exists to prevent. */
+    const todayOf = (screen: CanvasScreen) => screen.redesigns ?? undefined;
 
     const top = originY + TITLE_SPACE + CAPTION_SPACE;
     const nodes: LaidOutNode[] = [];
@@ -1055,6 +1079,7 @@ export function layoutExplorations(
           /* The spoken number belongs to the OPTIONS: the incumbent is what "number three" departs from. */
           option: incumbent ? undefined : ++optionNumber,
           incumbent: incumbent || undefined,
+          today: incumbent ? undefined : todayOf(screen),
         });
         x += Math.max(size.w, chromeWidth(screen, declaration, captured)) + KIND_GAP;
         panelH = Math.max(panelH, size.h);
@@ -1084,6 +1109,7 @@ export function layoutExplorations(
             option: step === 0 ? number : undefined,
             incumbent: (step === 0 && incumbent) || undefined,
             supporting: step > 0 || undefined,
+            today: incumbent ? undefined : todayOf(screen),
           });
           x +=
             Math.max(size.w, chromeWidth(screen, declaration, captured)) +

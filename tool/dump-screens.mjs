@@ -153,7 +153,13 @@ const screens = groups.flatMap((group) =>
     flowId: group.id,
     view: group.view,
     deviceViewport: deviceViewportFor(screen),
-    url: screenUrl(screen.route, screen.state),
+    /* A wireframe's url is absolute (its own server); the route's `wireframeUrl` rule, inlined for bare node. */
+    url: screen.wireframe
+      ? /^https?:\/\//.test(screen.wireframe)
+        ? screen.wireframe
+        : `${(declaration.wireframeBase ?? "").replace(/\/$/, "")}/${screen.wireframe.replace(/^\//, "")}`
+      : screenUrl(screen.route, screen.state),
+    wireframe: Boolean(screen.wireframe),
     /* Normalised the way the route normalises it: capture treats both claim fields as lists. */
     expect: screen.expect
       ? Array.isArray(screen.expect)

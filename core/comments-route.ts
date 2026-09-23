@@ -14,8 +14,10 @@
  * Generic: no knowledge of what the canvas is showing. The whole file goes with the folder.
  */
 
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { NextResponse } from "next/server";
 
@@ -128,6 +130,16 @@ const CONTRACT = [
   "usually written as one — \"you probably misunderstood me\", \"that is still wrong\" — which says nothing",
   "without the round it is answering. The whole thread is what makes the problem legible. `editedAt` means they",
   "rewrote the words before you acted; the region and the picture are unchanged by an edit.",
+  "A COMMENT THAT ASKS A QUESTION IS ANSWERED IN THE RECORD, NOT IN CHAT: PATCH { id, answer: \"<the answer>\" }",
+  "(or `node design-canvas/drain.mjs --canvas <slug> --ids cN --answer \"…\"`). The answer is drawn under the",
+  "reviewer's words in the open pin, the write marks the comment consumed, and a dismissal carries the pair into",
+  "`history` together.",
+  "A RECORD IS NEVER KEPT WHERE NOBODY CAN REACH IT. Marking a VERDICT consumed deletes it, because a like is",
+  "not a question and no press on the canvas could ever answer one; marking a NOTE consumed hands it to the",
+  "reviewer, who approves or reopens it. A capture removes any answered comment whose screen has left the",
+  "declaration. Every one of those deletions is a commit in design-canvas/comments/.history, a git repository",
+  "of its own: `git -C design-canvas/comments/.history log -p` is where you read what a comment said before it",
+  "went, and it is the only place, so do not keep a spent record alive in this file to preserve it.",
 ].join(" ");
 
 /**
@@ -263,6 +275,9 @@ async function readFile(paths: Paths): Promise<CanvasCommentFile> {
  *
  * Five deep and rotated on write, so the cost is bounded and the newest is always `.1`. Restoring is a copy:
  *   cp design-canvas/comments.json.1 design-canvas/comments.json
+ *
+ * IT IS A CRASH SEATBELT AND IT IS NOT THE HISTORY. It rotates on every WRITE, not every decision, so one
+ * Approve All of six comments burns through all five depths in a second. `recordHistory` below is the history.
  */
 const HISTORY = 5;
 
@@ -284,6 +299,92 @@ async function keepPrevious(paths: Paths): Promise<void> {
     await fs.copyFile(file, `${file}.1`);
   } catch {
     /* A backup that cannot be written must not stop the write it protects. */
+  }
+}
+
+const run = promisify(execFile);
+
+/**
+ * THE HISTORY IS A GIT REPOSITORY OF ITS OWN, INSIDE THE FOLDER THE PROJECT ALREADY IGNORES.
+ *
+ * WHY IT EXISTS. Records used to accumulate in the file that no view counted and no press could reach: a
+ * verdict whose option was deleted had no frame to draw a pin on, and a comment consumed on a screen nobody
+ * recaptured was in neither the hand-off nor the review bar. They were kept on the reasoning the owner gave
+ * once — *"maybe you can keep them in the history of your comments until I approve all of them, because I may
+ * refer to some older comments"* — and no history view was ever built, so keeping became hoarding. He found
+ * it at the worst possible place, the arming step of Clear All, which reads the raw array and so was the only
+ * thing that could see them: *"the handoff says that there is one comment... but when I clicked clear all, it
+ * tells me that there is 13 comments to clear. So how is that possible?"*
+ *
+ * Those records are deleted now, and deleting them is only safe if the words survive somewhere. He named the
+ * mechanism himself: *"just use the local git as much as possible so there is a proper mechanical history."*
+ * So every write lands as a commit here, and the state before any deletion is the previous commit.
+ *
+ * WHY A NESTED REPOSITORY RATHER THAN THE PROJECT'S OWN. `design-canvas/comments/` is gitignored by the
+ * installer, for reasons that have not changed: one reviewer's working notes, megabytes of annotated PNGs, and
+ * a merge conflict inside somebody's feedback. A repository INSIDE an ignored folder is invisible to the
+ * project — `git status` in the app repo never sees it — while `git -C design-canvas/comments/.history log -p`
+ * is an unbounded, diffable record of every decision.
+ *
+ * RECORDS ONLY, NEVER THE PICTURES. The PNGs are what made this folder worth ignoring in the first place, and
+ * a history carrying them would put hundreds of megabytes into a `.git` nobody backs up. A record keeps the
+ * note, the screen, the region and the thread, which is what "what did this say before you deleted it" means.
+ *
+ * IT CAN NEVER FAIL A WRITE. Same rule as `keepPrevious`: the reviewer's comment landing on disk matters more
+ * than the log of it, so every failure here is swallowed. A machine with no `git` on its PATH loses the
+ * history and keeps the tool.
+ */
+const HISTORY_DIR = path.join(DIR, "comments", ".history");
+
+let historyReady: Promise<boolean> | null = null;
+
+function openHistory(): Promise<boolean> {
+  /**
+   * `fs.access(<dir>/.git)`, NEVER `git rev-parse --git-dir`, and this is the trap the whole helper turns on.
+   *
+   * `rev-parse` walks UP. Run inside `design-canvas/comments/.history` in a checkout of the app, it finds the
+   * APP's repository, answers successfully, and the init never happens — after which every `git add` and
+   * `git commit` here is made against the product repo, staging and committing whatever else is uncommitted
+   * in it. The only honest question is whether this exact directory is a repository, which is a file test.
+   */
+  historyReady ??= (async () => {
+    try {
+      await fs.mkdir(HISTORY_DIR, { recursive: true });
+      try {
+        await fs.access(path.join(HISTORY_DIR, ".git"));
+      } catch {
+        await run("git", ["-C", HISTORY_DIR, "init", "--quiet"]);
+        /* A LOCAL IDENTITY. The log is a machine-local record of a dev tool, so it must not depend on a
+           global git config and must not sign itself with the name of whoever happens to be configured. */
+        await run("git", ["-C", HISTORY_DIR, "config", "user.email", "design-canvas@localhost"]);
+        await run("git", ["-C", HISTORY_DIR, "config", "user.name", "design canvas"]);
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  return historyReady;
+}
+
+async function recordHistory(
+  paths: Paths,
+  file: CanvasCommentFile,
+  why: string,
+): Promise<void> {
+  if (!(await openHistory())) return;
+  const name = `${paths.slug}.json`;
+  try {
+    await fs.writeFile(
+      path.join(HISTORY_DIR, name),
+      `${JSON.stringify(file, null, 2)}\n`,
+      "utf8",
+    );
+    await run("git", ["-C", HISTORY_DIR, "add", "--", name]);
+    await run("git", ["-C", HISTORY_DIR, "commit", "--quiet", "-m", `${paths.slug}: ${why}`]);
+  } catch {
+    /* A commit with nothing staged exits 1, which is the ordinary answer for a write that changed no
+       records, and is not a failure worth reporting. Neither is anything else here: see the note above. */
   }
 }
 
@@ -326,16 +427,22 @@ class UnknownIds extends Error {
   }
 }
 
-/** Read, change, write — as one step nothing else can interleave with. */
+/**
+ * Read, change, write — as one step nothing else can interleave with.
+ *
+ * `why` is the history's commit message, so `git log` reads as a list of decisions rather than of writes. It
+ * is the handler's own word for what it did, never a diff summary: the diff is already in the commit.
+ */
 function mutate(
   paths: Paths,
   change: (
     comments: CanvasComment[],
   ) => Promise<CanvasComment[]> | CanvasComment[],
+  why = "update",
 ): Promise<CanvasCommentFile> {
   return serialized(async () => {
     const file = await readFile(paths);
-    return writeFile(paths, await change(file.comments));
+    return writeFile(paths, await change(file.comments), undefined, why);
   });
 }
 
@@ -352,6 +459,7 @@ async function writeFile(
   paths: Paths,
   comments: CanvasComment[],
   seen?: string[],
+  why = "update",
 ): Promise<CanvasCommentFile> {
   await keepPrevious(paths);
   /* CARRIED, NEVER DROPPED. `seen` is the reviewer's other state in this file (see `CanvasCommentFile.seen`), and
@@ -373,6 +481,8 @@ async function writeFile(
   /* The namespaced layout puts the records inside `comments/`, which may not exist on a first write. */
   await fs.mkdir(path.dirname(paths.json), { recursive: true });
   await fs.writeFile(paths.json, `${JSON.stringify(file, null, 2)}\n`, "utf8");
+  /* AFTER the write, never before: the history records what happened, so a write that throws records nothing. */
+  await recordHistory(paths, file, why);
   return file;
 }
 
@@ -403,6 +513,47 @@ function imagePath(paths: Paths, id: string): string | null {
   const root = path.resolve(paths.images);
   const file = path.resolve(root, `${id}.png`);
   return file.startsWith(`${root}${path.sep}`) ? file : null;
+}
+
+/**
+ * A CONSUMED VERDICT IS SPENT, SO IT IS DELETED. This is what stopped the file growing records nobody could see.
+ *
+ * A verdict is not a question. The canvas says so itself and refuses to put one in the review queue, in the
+ * owner's own words: *"it showed me that there are three comments to review, while the canvas had only one
+ * screenshot with comment. And when I click the chevrons to look at those other comments, it just point me at
+ * some areas, but no comment indicators at all."* A like carries no sentence to reconsider and its region is the
+ * whole frame, so once the agent has read it and built the next round there is nothing left for anyone to do
+ * with it — and nowhere on the canvas it can be reached. Nine of them survived a retired exploration round that
+ * way, kept in a file that never showed them again.
+ *
+ * So the rule is the model: unread → the hand-off, consumed note → the review bar, consumed verdict → gone. That
+ * leaves no fourth place for a record to sit, which is why the count on Clear All can no longer disagree with the
+ * one on Hand Off.
+ *
+ * EVERY consumed verdict, not only the ones this request named. An agent draining one note has no idea what else
+ * is in the file, and the whole point is that a record cannot outlive the thing that could act on it.
+ *
+ * WHERE THEY GO. `git -C design-canvas/comments/.history log -p` still has every one of them with the words it
+ * carried, which is the trade the owner asked for when he chose git over keeping them in the live file.
+ */
+async function dropSpentVerdicts(
+  paths: Paths,
+  comments: CanvasComment[],
+): Promise<CanvasComment[]> {
+  const spent = comments.filter(
+    (one) => Boolean(one.kind) && one.kind !== "note" && Boolean(one.consumedAt),
+  );
+  if (spent.length === 0) return comments;
+  /* A verdict usually reuses the screen's own shot and writes no PNG of its own, but `setVerdict` accepts an
+     `image`, so the one it may have written goes with it. `force` makes the absent case a no-op. */
+  await Promise.all(
+    spent
+      .map((one) => imagePath(paths, one.id))
+      .filter((file): file is string => Boolean(file))
+      .map((file) => fs.rm(file, { force: true })),
+  );
+  const gone = new Set(spent.map((one) => one.id));
+  return comments.filter((one) => !gone.has(one.id));
 }
 
 /** Sequential and human-sized, because the number on the pin is what the designer will say out loud. */
@@ -524,7 +675,7 @@ export async function POST(request: Request) {
       stale: false,
     };
     return [...comments, comment];
-  });
+  }, "comment left");
   if (failure) return NextResponse.json({ error: failure }, { status: 400 });
   return NextResponse.json(written);
 }
@@ -558,6 +709,12 @@ export async function PATCH(request: Request) {
     note?: string;
     /** Another round on a comment already answered — see below. */
     reopen?: boolean;
+    /**
+     * The agent's answer to a comment that asked something. One id at a time, never empty, and it marks the
+     * comment consumed in the same write: an answered question is the reviewer's to close, exactly like a
+     * worked note. See `CanvasComment.answer`.
+     */
+    answer?: string;
     /** A fresh annotated PNG, cut from the screenshot the reviewer is objecting to. */
     image?: string;
     /**
@@ -604,6 +761,8 @@ export async function PATCH(request: Request) {
             image: body.verdict?.image,
             at: new Date().toISOString(),
           }),
+          undefined,
+          value === null ? `verdict cleared on ${screenId}` : `${value}d ${screenId}`,
         );
       }),
     );
@@ -626,7 +785,7 @@ export async function PATCH(request: Request) {
       await serialized(async () => {
         const file = await readFile(paths);
         const seen = [...new Set([...(file.seen ?? []), ...adding])];
-        return writeFile(paths, file.comments, seen);
+        return writeFile(paths, file.comments, seen, "screens marked seen");
       }),
     );
   }
@@ -643,6 +802,16 @@ export async function PATCH(request: Request) {
   if (body.note !== undefined && ids.size > 1)
     return NextResponse.json(
       { error: "one id at a time when editing a note" },
+      { status: 400 },
+    );
+  if (body.answer !== undefined && body.answer.trim().length === 0)
+    return NextResponse.json(
+      { error: "an answer cannot be empty" },
+      { status: 400 },
+    );
+  if (body.answer !== undefined && ids.size > 1)
+    return NextResponse.json(
+      { error: "one id at a time when answering" },
       { status: 400 },
     );
 
@@ -667,18 +836,32 @@ export async function PATCH(request: Request) {
       return {
         ...comment,
         note: (body.note ?? "").trim(),
-        history: [...(comment.history ?? []), { note: comment.note, at: now }],
+        /* The answered pair travels together: the words, and what the agent said to them. */
+        history: [
+          ...(comment.history ?? []),
+          {
+            note: comment.note,
+            at: now,
+            ...(comment.answer ? { answer: comment.answer.text } : {}),
+          },
+        ],
+        answer: null,
         consumedAt: null,
         stale: false,
       };
     }
+    const answering = body.answer !== undefined;
     return {
       ...comment,
       note: body.note === undefined ? comment.note : body.note.trim(),
       editedAt: body.note === undefined ? comment.editedAt : now,
+      answer: answering ? { text: (body.answer ?? "").trim(), at: now } : comment.answer,
+      /* An answer consumes: the question has been read and replied to, so it is the reviewer's to close. */
       consumedAt:
         body.consumed === undefined
-          ? comment.consumedAt
+          ? answering
+            ? (comment.consumedAt ?? now)
+            : comment.consumedAt
           : body.consumed
             ? (comment.consumedAt ?? now)
             : null,
@@ -706,8 +889,8 @@ export async function PATCH(request: Request) {
         if (missing.length > 0) throw new UnknownIds(missing);
         const changed = next(comments);
         if (reopening && body.image) await writeImage(paths, only, body.image);
-        return changed;
-      }),
+        return dropSpentVerdicts(paths, changed);
+      }, reopening ? `reopened ${only}` : body.answer !== undefined ? `answered ${only}` : body.note !== undefined ? `edited ${only}` : `consumed ${[...ids].join(", ")}`),
     );
   } catch (error) {
     if (error instanceof UnknownIds)
@@ -754,7 +937,9 @@ export async function DELETE(request: Request) {
     if (paths.images !== path.join(DIR, "comments")) {
       await fs.rm(paths.images, { recursive: true, force: true });
     }
-    return NextResponse.json(await serialized(() => writeFile(paths, [])));
+    return NextResponse.json(
+      await serialized(() => writeFile(paths, [], undefined, "cleared all")),
+    );
   }
   /**
    * ONE REQUEST, ANY NUMBER OF IDS, and that is what Approve All uses now.
@@ -796,6 +981,6 @@ export async function DELETE(request: Request) {
         images.map((image) => fs.rm(image as string, { force: true })),
       );
       return comments.filter((comment) => !gone.has(comment.id));
-    }),
+    }, `approved ${ids.join(", ")}`),
   );
 }

@@ -23,6 +23,14 @@ else entirely.
 15. The ones inherited from the live-frames era
 16. Frames that never settle — a JS-driven animation the freeze cannot see
 17. Open lands on the wrong state — the pin is client-only and the server is not
+18. A new control on a frame that hovers, highlights and never fires
+19. Claims that fail only in a full run
+20. A 200 that patched nothing — the slug is a query parameter
+21. The recapture loop, and the two reasons it cost an afternoon
+22. A list that stops at eight rows, but only when a person opens it
+23. A desktop frame laid out at a phone's width
+24. A frame that proves its claim on the page behind the dialog, or on a skeleton
+25. Clear All offers to delete thirteen comments on a canvas whose hand-off says one
 
 ---
 
@@ -564,3 +572,152 @@ review is captured against a build.
 **Generalise it:** when a tool keeps failing the same way, re-read its own instructions before improving it. Two
 of the three costs in this trap were paid to work around a paragraph that was already written.
 
+---
+
+## 22. A list that stops at eight rows, but only when a person opens it
+
+**Symptom.** The reviewer presses Open on a frame over a list and sees eight rows out of three hundred, with the
+footer still reading the real total. Every capture and every oracle check is green. It reads as a product bug, and
+it is the second time he has reported one like it: _"there is always a limit of showing maximum 8 quotes. but it
+doesn't make sense. there are like 300 plus quotes there."_
+
+**Cause.** A cap added so a DIALOG frame would not be photographed down to the fiftieth row behind it, gated on
+"a canvas pin is on the URL". The Open button carries exactly that URL, so the cap fired for the person too. The
+oracle's live pass cannot catch it: it asserts the frame's claims, and a capped list still carries them.
+
+**Fix.** Reach for `oneViewport` first; frame height belongs to the capture. When app code must still render
+differently for the photograph, gate it on `canvasCapturing()` (the starter states file), which reads the
+`window.__designCanvasCapture` mark `capture.mjs` sets with `addInitScript`. `check-canvas.mjs` deliberately does not
+set that mark, so its live pass sees the page exactly as Open does.
+
+**Generalise it:** a pin says what state to open; it does not say who is looking. Anything that exists only to
+make a picture sensible has to know it is making a picture.
+
+## 23. A desktop frame laid out at a phone's width, inside a desktop-sized picture
+
+**What it looks like.** A 1440x900 shot whose app is drawn in a ~600px column, carrying the mobile tab bar and no
+sidebar, with the rest of the frame blank. Every claim passes, the shot is the right size, the manifest is happy.
+The owner, on one of these: _"clearly a mobile screen while it had to be desktop"_.
+
+**Cause.** `captureOne` resolved a screen's viewport as "its own `viewport`, else its `deviceViewport`, else null",
+and on null it skipped `setViewportSize` altogether. Null is not "the canvas default" — the page keeps whatever the
+PREVIOUS screen left it at. So the moment a canvas declares a `device: "phone"` frame, that frame sets 390 and every
+desktop frame captured after it is laid out at 390 while its picture is still written at the canvas viewport. It
+only ever bites a canvas that mixes devices, which is why two canvases in the same repo were clean and the third
+was not, and why a later single-frame retry "fixed" some frames by accident: a fresh page starts at the context
+default.
+
+**Why nothing caught it.** Width was the only thing anyone measured, and the width was right — the shot really is
+1440 wide. The claims are text, and the text is all present at 390. The stability check compares two passes of the
+same wrong state. Only looking at the picture catches it.
+
+**Fix.** The fallback is the canvas `viewport`, and `setViewportSize` runs for every screen. A guard before the
+measurement compares `window.innerWidth` with the width the picture will claim and throws when they disagree, so a
+layout/picture mismatch is a named failure instead of a silent frame.
+
+**Generalise it:** a per-screen setting that falls through to "do nothing" inherits the previous screen's state.
+One page, many screens, and anything set per screen has to be set on EVERY screen, including the default one.
+
+## 24. A frame that proves its claim on the page behind the dialog, or on a skeleton
+
+**What it looks like.** Three frames, one canvas, all green. A frame for the Add Charge dialog shows no dialog.
+A frame for a quote the buyer VIEWED shows an expired one. A list frame shows eight shimmering rows and
+"0 quotes". Every one passed its claims and came out identical twice. The owner, on the third:
+_"Are you just randomly screenshotting some shit and telling me that it's true?"_
+
+**Cause, and it is one cause.** Claims were matched against `document.body.innerText` — the WHOLE page.
+So a dialog frame whose claim is the document behind it passes without the dialog opening; a frame claiming
+"Viewed" passes on any quote, because "Viewed" is a filter chip in the list underneath; and a frame claiming
+a title and column headings passes on a skeleton, because chrome paints before the rows arrive. The shutter's
+own guards cannot help: a skeleton is steady, so "two identical frames" is satisfied, and nothing is in flight,
+so "network quiet" is satisfied.
+
+**Fix.** Claims are read from the OPEN DIALOG STACK when anything is open, and from the body when nothing is,
+so a dialog frame can only be proved by what is in front of the scrim. Loading placeholders (`[aria-busy]`,
+`[data-loading]`, `[data-skeleton]`, `.animate-pulse`) are waited out before the claims are read, and a frame
+that never settles fails with that as its claim instead of photographing the placeholders. The canvas-wide
+`forbid` reads the WHOLE document instead, because an overlay behind an open dialog is still an overlay in
+the picture — while `expectMissing` stays on the frame's own surface, since it is the positive claim inverted
+and the page behind an open dialog is full of other states' words.
+
+**The stack, not its top, and that correction cost its own round.** Reading only the innermost dialog looks
+tighter and puts a second unreachable surface in place of the first. An app whose editor IS a dialog, and which
+opens the scanner over a brand-new document by design, left every claim about that document unprovable from any
+route: the scanner was always the innermost thing open, so the composer's own sections could not be read from
+anywhere. A frame whose subject is unreachable is worse than a loose claim, because no wording fixes it. The
+stack is the surface.
+
+**And the oracle has to read what the capture reads.** `check-canvas.mjs` re-proves every frame's claims on the
+served app, and while it read `document.body` and the capture read the dialog stack, the two disagreed on every
+dialog frame: the oracle reported "28 live URLs re-proved their claims" on a canvas whose capture had just
+refused eleven of them. Change one scope and change the other in the same edit.
+
+**Generalise it:** a claim has to be unprovable by the surface the frame is NOT about. Chrome that paints before
+data is not evidence of data, and text behind a scrim is not evidence of what is in front of it. When you write
+a claim, ask what else on the page could satisfy it.
+
+---
+
+## 25. Clear All offers to delete thirteen comments on a canvas whose hand-off says one
+
+**Symptom.** The Hand Off panel reads "1 comment to send", the badge on the button reads 1, and the red
+button beside them arms to "Delete all 13?". Nothing on the canvas accounts for the other twelve. The owner,
+looking at it: _"where the hell the other 12 came from? Weren't they supposed to get deleted if they were
+earlier attached to something which also got deleted."_
+
+**Cause, and it is one sentence.** Every count on that panel is FILTERED, each filter added on the reviewer's
+own feedback, and Clear All is the only thing that reads the raw array — so it was the only thing that could
+see the records the filters had quietly stopped counting. Three kinds had accumulated:
+
+- **A verdict whose option was deleted.** Retiring an exploration round removes its screens from the
+  declaration; the capture then deleted their pictures and their manifest entries and left the verdicts. With
+  no frame there is no pin, with no pin there is no Approve, and `spent()` in `canvas-view.tsx` drops them from
+  the queue on purpose (a finished round must not read as a standing warning). Counted nowhere, removable by
+  nothing.
+- **A note consumed on a screen nobody recaptured.** The review queue asked for `consumedAt` AND `stale`, and
+  `stale` is only set by a capture of that screen. A fix made in code without spending a capture — which is
+  ordinary, and is often what the reviewer asks for — produced a comment that was out of the hand-off because
+  it was consumed and out of the review bar because it was not stale.
+- **A consumed verdict anywhere.** The queue excludes verdicts by design, and rightly: a like is not a
+  question. So consuming one moved it into a set of size zero.
+
+**Why nothing caught it.** Each of those exclusions is individually correct and each was written from a real
+complaint. What nobody checked was whether the sets were EXHAUSTIVE, and they were not: the file had a fourth
+place, and the only door into it was an irreversible button's arming step.
+
+**Fix, and it is an invariant rather than a patch.** Every record is in exactly one of three places:
+
+| | where it lives |
+| --- | --- |
+| unread | the hand-off, whether or not its screen still exists |
+| consumed note | the review bar, whether or not the picture was retaken |
+| consumed verdict, or anything answered whose screen is gone | deleted |
+
+So: `toReview` no longer asks for `stale`; the route deletes a verdict when it is consumed; and
+`sweepAnsweredComments` in `capture.mjs` removes an answered comment whose screen has left the declaration,
+plus its annotated PNG. An UNREAD note still survives its screen and keeps travelling — that exception is
+load-bearing and has its own history, two real notes that stopped being handed off when their options were
+deleted. Deleting is only safe because `design-canvas/comments/.history` is now a git repository of its own,
+committed on every write, so a removed record is a `git log -p` away.
+
+**And the sweep is called from BOTH exits of the capture.** A declaration that lost a screen is exactly the
+change where nothing needs recapturing, so the run takes the "nothing has changed" branch — which is where the
+orphan prune had to be added for the same reason, one layer down, after deleted screens kept their pictures
+forever. Anything that cleans up after a DECLARATION cannot live only on the path that captures.
+
+**Generalise it:** when a view filters a set, the filters have to be exhaustive or the leftovers become
+invisible work. Write down where every record is allowed to be, and make the destructive control count the
+same sets the informative ones do — a number that only the delete button can compute is a number nobody has
+checked.
+
+## A comment on a screen that sits in several groups showed up on all of them
+
+Today's design is the incumbent of every exploration panel, so the same screen is drawn once per panel. Pins
+were matched to frames by screen id alone, so one outline drawn on it appeared on every copy, as many times as
+there were groups, and the saved record named the first group that happened to hold the screen, not the one it
+was drawn in. Owner, 2026-09-21: "whenever you use one screen and you put it on several groups and I leave the
+comment to that one screen, it actually duplicates it as many as there are groups." Fixed at the source: the
+frame passes the group it is drawn in (`groupId`) with every new comment, `belongsOnFrame` in
+`comments-client.ts` decides which frame a saved comment belongs on (screen AND group; a record with no
+`flowId` predates this and keeps showing wherever its screen is), and the focus jump prefers the frame of the
+recorded group. Comments saved before the fix keep their first-group `flowId`; read the note, not the group.

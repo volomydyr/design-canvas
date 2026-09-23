@@ -227,6 +227,33 @@ for (const exploration of explorations) {
 }
 
 /**
+ * A FRAME'S OWN TODAY, when it names one. `redesigns` points the switch under an option at the dialog or tab it
+ * redesigns instead of the panel's page. It obeys the same rule as `original`: a screen the permanent views draw.
+ */
+for (const exploration of explorations)
+  for (const screen of exploration.screens ?? []) {
+    /* No default and no silence: every option says which of today's screens it stands against, or that none
+       does. Owner: "make sure that you don't end up showing the same freaking screen for many, many different
+       screens … I'm talking about everything, even like empty states." */
+    if (screen.redesigns === undefined) {
+      failures.push(
+        `exploration ${exploration.id}: "${screen.id}" does not say what it redesigns — name today's screen of the same state, or null when nothing like it exists today`,
+      );
+      continue;
+    }
+    if (screen.redesigns === null) continue;
+    const target = screens.find((one) => one.id === screen.redesigns);
+    if (!target)
+      failures.push(
+        `exploration ${exploration.id}: "${screen.id}" redesigns "${screen.redesigns}", which is not a screen this canvas declares`,
+      );
+    else if (target.view === "exploration")
+      failures.push(
+        `exploration ${exploration.id}: "${screen.id}" redesigns "${screen.redesigns}", an exploration frame — today's screen comes from the permanent views`,
+      );
+  }
+
+/**
  * EVERY STEP BELONGS TO AN OPTION IN ITS OWN PANEL. `under` names the option whose flow this screen is a
  * step of, and that option must be a screen of the SAME exploration that is not itself a step — a step
  * under another panel's option, a flow screen, or another step draws nowhere the reviewer can find it.
@@ -695,7 +722,8 @@ for (const screen of screens) {
         `${screen.id}: names the file ${file} and there is no such file`,
       );
   }
-  if ((screen.source ?? []).length === 0)
+  /* A wireframe has no component behind it by definition; the note would nag about the thing it is for. */
+  if ((screen.source ?? []).length === 0 && !screen.wireframe)
     notes.push(`${screen.id}: no source file declared`);
 
   /**
@@ -709,6 +737,9 @@ for (const screen of screens) {
   if (stamped) {
     const moved = [];
     for (const [file, was] of Object.entries(stamped)) {
+      /* A wireframe's stamp is the served HTML's hash under a `wireframe:` key, not a path in this tree. The
+         capture re-reads it every run; there is nothing on disk here to compare it with. */
+      if (file.startsWith("wireframe:")) continue;
       const at = path.join(HERE, "..", file);
       const now = existsSync(at)
         ? createHash("sha256")
@@ -1292,7 +1323,15 @@ const ORACLE_NOTE_MARK = "oracle:";
 /* The first declared screen unless one is named: any real frame proves the round trip, and hard-coding a
    screen id makes this script project-specific for no gain. */
 /* A flow screen, because the probe runs while the flows view is the one on screen. */
-const on = argOf("comment-on") ?? flowScreens[0]?.id;
+let on = argOf("comment-on") ?? flowScreens[0]?.id;
+/* A CANVAS OF GROUPED SETS ONLY has no flow screen: an exploration drawn before its flows (the stock canvas,
+   2026-09-21, whose one set is `groupedOnly`) reached this line with `undefined` and the run died on
+   `[data-canvas-screen="undefined"]` after every other check had passed. The probe then runs on the grouped
+   view, on the first captured frame, which proves the round trip just as well. */
+if (!on) {
+  on = onDevice.find((screen) => screen.url && !screen.explain)?.id;
+  await switchView("kinds");
+}
 await page.evaluate((id) => window.__devCanvas.goTo(id), on);
 await page.waitForTimeout(900);
 await page.evaluate(() => window.__devCanvas.setCommenting(true));
@@ -1422,6 +1461,44 @@ try {
       failures.push(
         "the comment did not record the hash of the shot it was drawn on",
       );
+    /**
+     * AN ANSWER ROUND-TRIPS TOO. The agent answers a question with `PATCH { id, answer }`; the file has to hold
+     * the words, the write has to consume the comment, and the open pin has to draw them — otherwise an
+     * explanation given "on the canvas" reached nobody.
+     */
+    const answered = await page.evaluate(
+      async ({ id, endpoint }) => {
+        const response = await fetch(endpoint, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, answer: "oracle: yes, and this is the answer under the pin" }),
+        });
+        return response.ok;
+      },
+      { id: written.id, endpoint: commentsApi },
+    );
+    if (!answered) failures.push(`PATCH { id, answer } on ${written.id} was refused`);
+    else {
+      const withAnswer = JSON.parse(readFileSync(commentsFile(), "utf8")).comments.find(
+        (comment) => comment.id === written.id,
+      );
+      if (!withAnswer?.answer?.text?.startsWith("oracle:"))
+        failures.push(`the answer on ${written.id} did not land in the file`);
+      else if (!withAnswer.consumedAt)
+        failures.push(`answering ${written.id} did not mark it consumed`);
+      else {
+        await page.waitForTimeout(900);
+        await page.evaluate((id) => window.__devCanvas.openPin?.(id), written.id);
+        await page.waitForTimeout(400);
+        const drawn = await page
+          .locator(`[data-canvas-answer="${written.id}"]`)
+          .innerText()
+          .catch(() => "");
+        if (!drawn.includes("this is the answer under the pin"))
+          failures.push(`the answer on ${written.id} is in the file and not drawn under its pin`);
+        else console.log(`answer round trip holds: ${written.id} carries its answer in the file and under the pin`);
+      }
+    }
     /* The endpoint is passed IN: this closure runs in the browser, where the Node-side consts do not exist. */
     const removed = await page.evaluate(
       async ({ id, endpoint }) => {
@@ -1553,6 +1630,44 @@ for (const mode of views) {
 }
 
 /**
+ * THE SWITCH UNDER AN OPTION FLIPS IT TO TODAY'S SCREEN AND BACK. Every exploration frame but the incumbent
+ * carries one (`data-canvas-today` names the screen it flips to). Pressed, the frame's picture becomes that
+ * screen's shot and the figure says so (`data-canvas-showing="today"`); pressed again, the option returns. A
+ * real press through the mouse, because the surface's pan handler eats clicks that do not reach the chrome.
+ */
+if (exploreScreens.length > 0) {
+  await switchView("explore");
+  const first = page.locator("[data-canvas-today]").first();
+  const count = await page.locator("[data-canvas-today]").count();
+  if (count === 0)
+    notes.push("explore: no frame carries the switch to today's screen — every option declares redesigns: null");
+  else {
+    const figure = first.locator("xpath=ancestor::figure[1]");
+    const optionId = await figure.getAttribute("data-canvas-screen");
+    const todayId = await first.getAttribute("data-canvas-today");
+    await page.evaluate((id) => window.__devCanvas.goTo(id), optionId);
+    await page.waitForTimeout(700);
+    await first.click({ timeout: 10_000 });
+    await page.waitForTimeout(400);
+    const showing = await figure.getAttribute("data-canvas-showing");
+    const src = (await figure.locator("img").first().getAttribute("src").catch(() => "")) ?? "";
+    if (showing !== "today" || !src.includes(`id=${encodeURIComponent(todayId)}`))
+      failures.push(
+        `explore: the switch on ${optionId} did not flip it to ${todayId} (showing=${showing}, src=${src})`,
+      );
+    else {
+      await first.click({ timeout: 10_000 });
+      await page.waitForTimeout(400);
+      const back = await figure.getAttribute("data-canvas-showing");
+      const srcBack = (await figure.locator("img").first().getAttribute("src").catch(() => "")) ?? "";
+      if (back !== null || !srcBack.includes(`id=${encodeURIComponent(optionId)}`))
+        failures.push(`explore: the switch on ${optionId} did not flip back to the option`);
+      else console.log(`today switch holds: ${optionId} flips to ${todayId} and back`);
+    }
+  }
+}
+
+/**
  * THE OPEN BUTTON MUST LAND ON WHAT THE PICTURE SHOWS. Every frame carries an Open button to its real URL,
  * and a canvas whose buttons land somewhere else is lying about its own pictures — found live when a whole
  * family of parameter-pinned dialog states opened as bare pages, because the served app was started without
@@ -1572,7 +1687,36 @@ for (const mode of views) {
         timeout: 45_000,
       });
       const wanted = screen.expect ?? [];
-      const banned = [...(screen.expectMissing ?? []), ...(forbid ?? [])];
+      const banned = screen.expectMissing ?? [];
+      const bannedEverywhere = forbid ?? [];
+      /* THE ORACLE READS WHAT THE CAPTURE READS. While this checked
+         `document.body` and the capture checked the open dialog stack, the two
+         disagreed on every dialog frame in the project this came from: the
+         oracle reported "28 live URLs re-proved their claims" on a canvas whose
+         capture had just refused eleven of them. A green check that contradicts
+         the run it is checking is worse than no check. Positive claims read the
+         open surface; forbidden text reads the whole document, because an
+         overlay is an overlay wherever it sits. */
+      const readSurface = async () => {
+        let text = "";
+        for (const frame of live.frames())
+          text += await frame
+            .evaluate(() => {
+              const open = Array.from(
+                document.querySelectorAll(
+                  '[role="dialog"],[role="alertdialog"]',
+                ),
+              ).filter((el) => {
+                if (el.getAttribute("aria-hidden") === "true") return false;
+                const box = el.getBoundingClientRect();
+                return box.width > 0 && box.height > 0;
+              });
+              if (open.length === 0) return document.body?.innerText ?? "";
+              return open.map((el) => el.innerText ?? "").join("\n");
+            })
+            .catch(() => "");
+        return text;
+      };
       const readAll = async () => {
         let text = "";
         for (const frame of live.frames())
@@ -1581,7 +1725,7 @@ for (const mode of views) {
             .catch(() => "");
         return text;
       };
-      let text = await readAll();
+      let text = await readSurface();
       /* The same bounded re-read the capture gives claims: dialogs mount after the page settles. */
       const until = Date.now() + 20_000;
       while (
@@ -1589,16 +1733,24 @@ for (const mode of views) {
         !wanted.every((claim) => text.includes(claim))
       ) {
         await live.waitForTimeout(500);
-        text = await readAll();
+        text = await readSurface();
       }
+      const whole = await readAll();
       const problems = [];
       for (const claim of wanted)
         if (!text.includes(claim))
           problems.push(
             `${screen.id}: its Open destination does not show "${claim}" on the served app — the button does not land on the picture`,
           );
+      /* `expectMissing` is the frame's own claim inverted, so it reads the frame's surface; `forbid` is an
+         overlay tripwire, so it reads the whole document. */
       for (const nope of banned)
         if (text.includes(nope))
+          problems.push(
+            `${screen.id}: its Open destination shows "${nope}" on the served app`,
+          );
+      for (const nope of bannedEverywhere)
+        if (whole.includes(nope))
           problems.push(
             `${screen.id}: its Open destination shows "${nope}" on the served app`,
           );
@@ -1612,7 +1764,9 @@ for (const mode of views) {
     }
   };
   for (const screen of screens) {
-    if (!screen.url || screen.explain || screen.frozen) continue;
+    /* A wireframe has no Open destination: its url is a static file on another server, and the button this
+       pass exists to keep honest is not drawn under it. */
+    if (!screen.url || screen.explain || screen.frozen || screen.wireframe) continue;
     /**
      * ONE RETRY BEFORE A VERDICT. Against a dev server the first hit of a route compiles it, and a cold
      * route plus a one-shot dialog opener lost the race often enough that whole oracle runs failed on a

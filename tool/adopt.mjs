@@ -25,8 +25,11 @@
  * IT EDITS THE REVIEW FILE DIRECTLY, same as `unsee.mjs` and for the same reason: a deliberate, named,
  * command-line act, not something reachable from the browser. The declared ids come from `dump-screens.mjs`,
  * the same reading of the declaration the capture uses, so this can never adopt a different set of screens
- * than the canvas draws. Exploration frames and explanation panels are excluded exactly as the queue excludes
- * them.
+ * than the canvas draws. Explanation panels are excluded exactly as the queue excludes them; exploration frames
+ * are adopted like any other since 2026-09-22, when the queue started covering the exploration tab too.
+ *
+ *   node design-canvas/adopt.mjs --canvas stock --only ov-products,ov-pieces   # only these ids, for frames the
+ *   reviewer has already seen while the rest of the round stays new
  *
  * DELETE WITH: the design-canvas/ folder.
  */
@@ -62,8 +65,8 @@ if (has("list")) {
   process.exit(0);
 }
 
-/* The declaration, read the one honest way. `view` separates the permanent views from the exploration, and an
-   explanation panel has no url — the queue counts neither, so neither is adopted. */
+/* The declaration, read the one honest way. An explanation panel has no url — the queue does not count it, so it
+   is not adopted. */
 const dumped = spawnSync("node", [path.join(HERE, "dump-screens.mjs"), "--canvas", canvas], {
   encoding: "utf8",
 });
@@ -72,9 +75,16 @@ if (dumped.status !== 0) {
   process.exit(1);
 }
 const { screens } = JSON.parse(dumped.stdout);
-const ids = screens
-  .filter((one) => one.view !== "exploration" && one.url !== null)
-  .map((one) => one.id);
+const only = argOf("only")?.split(",").map((one) => one.trim()).filter(Boolean) ?? null;
+const declared = screens.filter((one) => one.url !== null).map((one) => one.id);
+if (only) {
+  const unknown = only.filter((id) => !declared.includes(id));
+  if (unknown.length) {
+    console.error(`not declared on this canvas: ${unknown.join(", ")}`);
+    process.exit(1);
+  }
+}
+const ids = only ?? declared;
 
 const before = seen.size;
 for (const id of ids) seen.add(id);

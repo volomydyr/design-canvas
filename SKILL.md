@@ -139,6 +139,17 @@ from the old rule: the incumbent is a REFERENCE, not a sixth direction. It reuse
 still fails rule 1. `check-canvas.mjs` fails an exploration without an `original`, or with one the flows do
 not declare.
 
+**BEFORE THE ROUNDS: WIREFRAMES, WHEN THE STRUCTURE ITSELF IS THE QUESTION.** The rounds above compare
+built directions. When the open question is how a whole area should be shaped — one page or several, what
+folds into what — the options are drawn first as lo-fi HTML wireframes served outside the app and declared
+with `wireframe` (`references/declaration.md`, "A structure before there is code"): black and white,
+rectangles, real copy, hierarchy only, no UI. The reasoning comes BEFORE the drawing, in this order: the
+jeweler's life around the area, the map of its most important surfaces, the agent's own best decision, then
+the wireframes; the brief plain-English version of that reasoning goes to the reviewer in chat, mapped to the
+frames, never as notes on the canvas. Owner, 2026-09-21: _"it's gonna be very difficult to just make a
+decision right now … you need to do very, very low fidelity wireframes … there must be the reasoning first …
+and then there should be lo-fi wireframes."_ Screens first; the user flows follow once the screens settle.
+
 ### The diagnosis step — run it before composing any round
 
 A round of directions is an answer, and an answer needs a stated question. Before writing an
@@ -184,15 +195,15 @@ deleted."_ So it is data, never structure:
 - The scaffolding that made a direction reachable at a URL goes with it — mark it
   `DELETE WITH: the <question> exploration`, not with the canvas folder. It has an earlier deletion date than
   everything else the install added.
-- **The new-screens queue never covers exploration frames.** The blue ring and the "N of M New Screens" stepper
-  belong to the two PERMANENT views, where a frame arriving among frames that were already there is news. On the
-  exploration tab every frame is new by definition, so the count can only ever equal the number of options, and
-  a one-by-one walk fights the whole point of drawing them side by side to be compared. Owner, seeing a round
-  arrive under "1 of 5 New Screens": _"the screens on the exploration tab do not need to be marked as new,
-  because they are essentially all new. The new screen functionality that marks them with blue color and allows
-  to review them one by one is supposed to be for the user flows and for the grouped screens."_
-  `canvas-view.tsx` enforces it by filtering `view === "exploration"` out of `declaredIds`, which keeps those
-  ids out of `seen` as well — so retiring a spent round leaves nothing behind that still counts it.
+- **The new-screens queue covers every tab, the exploration included (since 2026-09-22).** For a month the
+  exploration tab was excluded on the owner's ruling that its frames "are essentially all new". He reversed it
+  when a stock exploration reached a hundred frames stacked under four options: _"sometimes there are so many
+  screens that it might become helpful to actually see which ones are the new ones and switch between them
+  quickly to look and provide feedback ... so maybe we need to get rid of that exception in the skill."_ The
+  blue ring and the "N of M New Screens" stepper now walk new exploration frames too. The baseline is set the
+  same way on every tab: `adopt.mjs --canvas <slug>` once before the first delivery, `adopt.mjs --only <ids>` to
+  record frames the reviewer has already looked at while the rest of a round stays new, `unsee.mjs` for the
+  opposite. Retiring a spent round leaves its ids in `seen`, which is harmless: a deleted id counts nowhere.
 - **BUT THE PROMOTED SCREENS ARE NEW, and marking them is not optional.** The moment the winner lands in the two
   permanent views, every screen carrying it goes into the queue, because promotion is never one frame changing
   tabs. Owner: _"when I approve the designs from the exploration and you move them to the other two tabs, it is
@@ -207,6 +218,19 @@ deleted."_ So it is data, never structure:
 options: grouped screens, user flows, exploration. A canvas built for handover wants the first two; a canvas
 opened to decide something wants the third as well. One question, and it stops a view being declared that
 nobody asked for.
+
+**EVERY OPTION CARRIES A SWITCH TO TODAY'S SCREEN (since 2026-09-22).** Under every exploration frame but the
+incumbent, first in the foot row, an outlined clock button flips the frame IN PLACE to the screen it redesigns:
+the picture becomes today's shot at the option's size, the caption reads "Today: …", the pins and the Wireframe
+pill step aside, and a second press brings the option back. Its hint is one short line with no heading and no full stop, "Show today's version" or "Show the redesign", centred right under the button (`CanvasTooltip compact`). EVERY exploration screen declares `redesigns`: the
+id of today's screen IN THE SAME STATE, or `null` when nothing like it exists in the old code, and then no switch
+is drawn. There is no default to the panel's page, on the owner's ruling the same day: _"make sure that you don't
+end up showing the same freaking screen for many, many different screens, because it's going to be a really big
+mistake. I'm talking about everything, even like empty states."_ So the empty Pieces tab flips to today's empty
+Pieces tab, the Adjust dialog to today's Adjust dialog, and a frame for something the old code never had says
+`null`. The id must be one the permanent views draw; the oracle fails a missing or unknown `redesigns` and
+presses one switch both ways on every run. What it costs the declaration: every state an option is drawn in has
+to exist in today's app as a captured screen reachable by URL, which is pin work in the app and most of the work.
 
 **Exploration is the FIRST tab and the opening view while it exists.** Owner: _"I also think the
 explorations tab has to be the first one when it's available."_ A declaration with an open question is a canvas
@@ -429,8 +453,19 @@ All, no drag, and the route refuses every write with 405. It exists because a ca
 to read, and a reviewer will want to hand developers a link rather than ask them to run the app:
 *"it would be helpful if it did because I could then share it with my developers."* A published canvas owes two
 things from the target project, both in its README: the shots have to be traced into the picture route's bundle
-(they live outside `public/` on purpose), and `NEXT_PUBLIC_CANVAS_PINS=1` has to be set or every frame's Open
-button lands on an unpinned page. It has NO AUTH of its own — whatever protects the deployment protects it.
+(they live outside `public/` on purpose), and `NEXT_PUBLIC_CANVAS_PINS=1` has to be set on the BUILD or every frame's Open
+button lands on an unpinned page. In development pins are always on: the gate is `canvasPinsAllowed()` in the
+project's states file, dev OR the flag, and every app-code reader of a canvas param goes through it. A project
+that tests the env variable directly pins nothing on a plain `npm run dev`, which is how one teammate's checkout
+landed every Open button on the resting page. It has NO AUTH of its own — whatever protects the deployment protects it.
+
+**A SHORTCUT FOR THE PICTURE NEVER REACHES THE OPEN BUTTON.** Frame height belongs to the capture: reach for
+`oneViewport` first. When app code genuinely has to render differently for a photograph (a list painted with a
+handful of rows so a dialog frame is not shot down to its last row), gate it on `canvasCapturing()` from the
+project's states file, which only `capture.mjs`'s browser satisfies, and never on the pin params alone. Open
+carries the same URL, so a pin-gated cap shows the reviewer a list that stops at eight: _"it's okay to use such
+an approach just to capture a screen but it should never be like that when I open it through the open button
+because that's not the first time I see this bug."_ See trap 22.
 
 **SEVERAL CANVASES PER PROJECT, SEPARATED BY URL AND BY NOTHING ELSE.** One project stopped being one canvas
 the moment a second feature wanted one. Owner: _"we already have one for the online store stuff,
@@ -943,6 +978,14 @@ does not. Written from the first real round: thirteen comments left in one sitti
    why a prompt existed when the page "already shows placeholders", the honest answer — the placeholders are
    a RELABEL of bands that already exist, so at zero there is nothing to relabel — turned a design question
    into a one-line deletion. Options first would have redesigned something that should not have been there.
+
+   **AND THE ANSWER GOES INTO THE RECORD, NOT ONLY INTO CHAT (since 2026-09-22).** `PATCH { id, answer: "…" }`,
+   or `node design-canvas/drain.mjs --canvas <slug> --ids cN --answer "…"`, writes the words onto the comment
+   and marks it consumed in the same write; the canvas draws them under the reviewer's note in the open pin,
+   labelled Answer, and the review bar's walk lands on that pin like any other answered comment. Approve
+   closes it; a dismissal carries the question and the answer into `history` together. The owner, on reading
+   one explanation in chat only: it has to be beside the comment on the canvas. A question answered in chat and
+   drained without `answer` looks, on the canvas, like a comment that was ignored.
 4. **Check who can reach the state at all.** Five tiles were built on a review-only flag that grants
    owner affordances to any URL carrying it, and no real user can ever arrive at one: _"anything that's
    opened as a separate link is just how the end customer is going to see it."_ For every tile: who is
@@ -960,6 +1003,29 @@ does not. Written from the first real round: thirteen comments left in one sitti
    By hand, one `PATCH` per comment, this has been got wrong twice — comments left undrained, and a reviewer
    looking at work he had already given. Whether the fix is good is still the reviewer's call, on the
    recaptured frame, which is what Approve and Still wrong on a stale pin are for.
+
+   **AND CONSUMING IS NOT FREE, SO READ THE VERDICTS BEFORE YOU DRAIN THEM.** Consuming a NOTE hands it to the
+   reviewer's queue, whether or not you recaptured its screen. Consuming a VERDICT **deletes it**, because a
+   like is not a question and there is no press on the canvas that could ever answer one — which is why they
+   used to pile up in the file where nothing counted them. Build the round first, drain second.
+
+   **EVERY RECORD IS IN EXACTLY ONE OF THREE PLACES**, and this is what keeps the numbers on the panel honest:
+   unread in the hand-off, a consumed note in the review bar, and everything else deleted — a consumed verdict
+   by the route, and any answered comment whose screen has left the declaration by the next capture. Do not
+   invent a fourth place by keeping a spent record alive "in case", which is exactly how a Clear All came to
+   offer thirteen deletions on a canvas whose hand-off said one. See trap 25.
+
+   **WHAT WAS DELETED IS IN GIT.** `design-canvas/comments/.history` is a repository of its own, inside the
+   folder the project already gitignores, and every write to a review lands in it as a commit named for what
+   happened. When a comment's words matter and the record is gone, read them there rather than guessing:
+
+   ```bash
+   git -C design-canvas/comments/.history log --oneline -- <slug>.json
+   git -C design-canvas/comments/.history show <commit>:<slug>.json
+   ```
+
+   Records only, never the annotated PNGs — those are megabytes each and are what made the folder worth
+   ignoring in the first place.
 
    **A VERDICT HE SAID OUT LOUD IS NOT IN THE FILE, AND THE NEXT ROUND IS BUILT FROM THE FILE.** Likes and
    dislikes are comments, so a reviewer who types "keep 2, drop 4" in chat rather than clicking leaves the

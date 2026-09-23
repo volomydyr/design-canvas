@@ -13,6 +13,9 @@
  *   node design-canvas/drain.mjs --canvas checkout --ids c40,c41,c46
  *   node design-canvas/drain.mjs --canvas checkout --all            # every unconsumed comment
  *   node design-canvas/drain.mjs --canvas checkout --list           # what is open, and nothing else
+ *   node design-canvas/drain.mjs --canvas checkout --ids c32 --answer "The count is the same aggregate the cards read"
+ *                                                                  # a comment that asked something: the answer lands
+ *                                                                  # in the record and is drawn under the pin
  *   node design-canvas/drain.mjs --canvas checkout --orphans        # only the ones with no screen left
  *
  * `--url` DEFAULTS TO PORT 3000 ON PURPOSE, because this is shared with people whose projects run there. A
@@ -147,6 +150,20 @@ if (wanted.length === 0) {
   process.exit(0);
 }
 
+/**
+ * AN ANSWER IS FOR ONE COMMENT. The reviewer reads it under that pin, so a text sent to several ids would be
+ * the same sentence pinned to several different questions. The route refuses it too; refusing here says why.
+ */
+const answer = argOf("answer");
+if (answer !== null && answer.trim().length === 0) {
+  console.error("--answer needs the words; an empty answer would be a consumed question with nothing under it");
+  process.exit(1);
+}
+if (answer !== null && wanted.length !== 1) {
+  console.error(`--answer goes with exactly one id (got ${wanted.length}); answer each question in its own run`);
+  process.exit(1);
+}
+
 /* An id that is not in the file at all is a typo, and drowning it in a list of successes is how a comment gets
    quietly left behind. */
 const known = new Set(comments.map((one) => one.id));
@@ -161,7 +178,7 @@ for (const id of wanted) {
   const response = await fetch(endpoint, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id, consumed: true }),
+    body: JSON.stringify(answer === null ? { id, consumed: true } : { id, consumed: true, answer: answer.trim() }),
   });
   if (response.ok) drained += 1;
   else console.error(`  ${id}: the route answered ${response.status}`);
@@ -169,7 +186,7 @@ for (const id of wanted) {
 
 const after = (await read()).filter((one) => !one.consumedAt);
 console.log(
-  `drained ${drained} of ${wanted.length}: ${wanted.filter((id) => known.has(id)).join(", ") || "none"}`,
+  `${answer === null ? "drained" : "answered"} ${drained} of ${wanted.length}: ${wanted.filter((id) => known.has(id)).join(", ") || "none"}`,
 );
 if (already.length > 0)
   console.log(`already worked before this run: ${already.join(", ")}`);

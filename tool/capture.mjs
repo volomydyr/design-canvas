@@ -35,8 +35,10 @@
  * WebP through the browser's own encoder (Chromium's `Page.captureScreenshot` takes it, Playwright's own
  * helper does not) — high quality at about a tenth of a PNG's size, and no new dependency for either.
  */
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -77,6 +79,123 @@ const COMMENTS = (() => {
   const flat = path.join(HERE, "comments.json");
   return existsSync(flat) ? flat : namespaced;
 })();
+
+/* The flat pre-slug layout keeps its pictures directly in `comments/`; the namespaced one has its own folder.
+   Same fallback `COMMENTS` uses, so a sweep deletes from wherever the pictures really are. */
+const COMMENT_IMAGES =
+  COMMENTS === path.join(HERE, "comments.json")
+    ? path.join(HERE, "comments")
+    : path.join(HERE, "comments", canvasSlug);
+
+/**
+ * THIS SCRIPT WRITES THE COMMENT FILE WITHOUT GOING THROUGH THE ROUTE, SO IT HAS TO KEEP ITS OWN HISTORY.
+ *
+ * `comments-route.ts` commits every write it makes to `design-canvas/comments/.history`, which is what makes
+ * a deleted record recoverable. This file is the other writer: it marks comments stale and it sweeps the
+ * answered ones whose screen has gone. Without this, a sweep would be the one deletion in the whole tool that
+ * left no trace — the exact failure the history was built to end.
+ *
+ * COMMIT BEFORE THE SWEEP AS WELL AS AFTER. A record that has never been committed cannot be recovered from a
+ * commit that removes it, and on an install predating the history that is every record in the file. So the
+ * state as found is committed first, and the sweep's result second: two commits, and the words survive in the
+ * first one.
+ *
+ * It fails silently, for the same reason the route's does: the capture landing on disk matters more than the
+ * log of it, and a machine with no `git` keeps the tool.
+ */
+const HISTORY_DIR = path.join(HERE, "comments", ".history");
+
+function historyCommit(message) {
+  try {
+    mkdirSync(HISTORY_DIR, { recursive: true });
+    /* `fs.access`, never `git rev-parse --git-dir`, which walks UP and would answer with the APP's repository
+       — after which every add and commit here would be made against the product repo. Trap 25. */
+    if (!existsSync(path.join(HISTORY_DIR, ".git"))) {
+      execFileSync("git", ["-C", HISTORY_DIR, "init", "--quiet"]);
+      execFileSync("git", ["-C", HISTORY_DIR, "config", "user.email", "design-canvas@localhost"]);
+      execFileSync("git", ["-C", HISTORY_DIR, "config", "user.name", "design canvas"]);
+    }
+    const name = `${canvasSlug}.json`;
+    copyFileSync(COMMENTS, path.join(HISTORY_DIR, name));
+    execFileSync("git", ["-C", HISTORY_DIR, "add", "--", name]);
+    execFileSync("git", ["-C", HISTORY_DIR, "commit", "--quiet", "-m", `${canvasSlug}: ${message}`], {
+      stdio: "ignore",
+    });
+  } catch {
+    /* A commit with nothing staged exits non-zero, which is the ordinary answer when nothing changed. */
+  }
+}
+
+/**
+ * A COMMENT GOES WITH THE SCREEN IT POINTS AT. The orphan prune already deletes the picture and the manifest
+ * entry; this is the third thing that was supposed to go with them and never did.
+ *
+ * What that cost: retiring an exploration round deleted its options from the declaration, so the frames went,
+ * the shots went — and the verdicts left on those frames stayed in the comment file forever. They could not be
+ * drawn (no frame), could not be approved (approval is a press on a pin), and were counted by nothing, because
+ * the canvas filters them out of every view on purpose. The only thing in the product that could still see them
+ * was the arming step of Clear All, which reads the raw array: the owner found nine of them plus two answered
+ * notes there, on a canvas whose hand-off said one. *"Weren't they supposed to get deleted if they were earlier
+ * attached to something which also got deleted."* Yes. Now they are.
+ *
+ * AN UNREAD NOTE IS NOT SWEPT, AND THAT EXCEPTION IS LOAD-BEARING. `canvas-view.tsx` counts an unread note
+ * whether or not its frame survives, because a comment whose screen is gone is still feedback — the rule was
+ * written after two real notes about deleted options stopped being handed off and the canvas showed nothing to
+ * hand over at all. Unread words survive their screen and keep travelling until an agent drains them.
+ *
+ * WHERE THEY GO. The route commits every write to `design-canvas/comments/.history`, so a swept record is one
+ * `git log -p` away rather than gone.
+ *
+ * A FUNCTION, AND CALLED FROM BOTH EXITS, because the no-op exit is where this class of bug lives. The orphan
+ * prune had to learn the same thing: the pruning sat at the end of a run, so a capture where nothing had
+ * changed skipped it, and a screen that left the declaration kept its picture forever. A run that captures
+ * nothing still has to clean up after a declaration that did change — that is exactly when a screen was
+ * deleted and nothing else was touched.
+ */
+function sweepAnsweredComments(comments, declaredIds) {
+  const swept = [];
+  const kept = comments.filter((comment) => {
+    const answered = Boolean(comment.consumedAt);
+    const verdict = Boolean(comment.kind) && comment.kind !== "note";
+    const homeless = !declaredIds.has(comment.screenId);
+    /**
+     * A NOTE needs BOTH: answered by an agent AND its screen gone. Either alone is still somebody's turn — an
+     * unread note travels in the hand-off whatever happened to its frame, and an answered one on a live screen
+     * is the reviewer's to approve.
+     *
+     * A VERDICT needs EITHER. Consumed, it is spent by definition; homeless, the option it judged does not
+     * exist, so there is nothing left to build three variations of. That second case is the one that piled up,
+     * because `canvas-view.tsx` already refuses to count it (`spent()`) and nothing ever removed it.
+     */
+    if (!(verdict ? answered || homeless : answered && homeless)) return true;
+    swept.push(comment.id);
+    return false;
+  });
+  for (const id of swept) {
+    /* `c` plus digits is the only id the route mints, and it is the only shape allowed to reach a path here. */
+    if (!/^c\d+$/.test(id)) continue;
+    const picture = path.join(COMMENT_IMAGES, `${id}.png`);
+    if (existsSync(picture)) rmSync(picture);
+  }
+  return { kept, swept };
+}
+
+/** Write the sweep's result back, and say what went. Shared by both exits for the same reason the sweep is. */
+function saveSweep(file, comments, swept) {
+  if (swept.length === 0) return;
+  /* The words, before they go. See `historyCommit`: a record that was never committed cannot be read back
+     out of the commit that removes it. */
+  historyCommit("as found, before the capture swept it");
+  writeFileSync(
+    COMMENTS,
+    `${JSON.stringify({ ...file, updatedAt: new Date().toISOString(), comments }, null, 2)}\n`,
+    "utf8",
+  );
+  historyCommit(`capture swept ${swept.join(", ")}`);
+  console.log(
+    `${swept.length} answered comment(s) removed with the screen they pointed at: ${swept.join(", ")}`,
+  );
+}
 
 /* Next's default port. Pass `--url http://localhost:<port>` when the server is somewhere else — and for a
    production build, which is what captures should run against, it always is. */
@@ -226,6 +345,10 @@ function stampOf(screen) {
    * depends on the file that implements it.
    */
   const entries = [...(screen.source ?? []), ...GLOBAL_INPUTS];
+  /* A WIREFRAME IS MADE OF ITS OWN HTML, served from outside the tree, so its stamp is that file's hash
+     (fetched once per run, below the `declared` line). Keyed so check-canvas knows it is not a path. */
+  if (screen.wireframe)
+    sources[`wireframe:${screen.url}`] = screen.wireframeHash ?? "unhashed";
   /* READ OFF THE URL, not off a `state` field: the declaration is served over the API and what arrives is the
      resolved `url` with `?canvas=<state>` in it. `screen.state` is always undefined here, so the first version of
      this check never fired once — the hole it was written to close stayed open and the test above found it. */
@@ -396,6 +519,21 @@ const { viewport, screens: served } = declaration;
  * pass, and the orphan prune ever see them. A screen with no url downstream of this line is a bug again.
  */
 const declared = (served ?? []).filter((s) => !s.explain);
+/**
+ * WIREFRAMES ARE HASHED BEFORE SELECTION, because selection is what the hash decides. A wireframe names no
+ * file in this tree, so `stampOf` cannot read it; it reads the served HTML once here instead, and an edited
+ * wireframe recaptures itself the way an edited component does. Unreachable is a value, not a crash: the
+ * capture itself will then say the page did not load, which is the honest failure.
+ */
+for (const s of declared) {
+  if (!s.wireframe || !s.url) continue;
+  try {
+    const body = await (await fetch(s.url)).text();
+    s.wireframeHash = createHash("sha256").update(body).digest("hex").slice(0, 16);
+  } catch {
+    s.wireframeHash = "unreachable";
+  }
+}
 /* What was captured last time, read before anything is taken, because `--changed` decides from it. */
 const manifestPath = path.join(SHOTS, "manifest.json");
 const previous = existsSync(manifestPath)
@@ -474,6 +612,16 @@ if (changedOnly) {
       console.log(
         `${gone.length} no longer declared and removed: ${gone.map((shot) => shot.screenId).join(", ")}`,
       );
+    }
+    /* The comments of those same screens, for the same reason: a declaration that lost a screen is exactly the
+       change that captures nothing, so this exit is where an answered comment would otherwise be stranded. */
+    if (existsSync(COMMENTS)) {
+      const file = JSON.parse(readFileSync(COMMENTS, "utf8"));
+      const { kept, swept } = sweepAnsweredComments(
+        file.comments ?? [],
+        new Set(declared.map((screen) => screen.id)),
+      );
+      saveSweep(file, kept, swept);
     }
     console.log("Nothing has changed. The canvas is up to date.");
     process.exit(0);
@@ -742,6 +890,13 @@ const context = await browser.newContext({
   /* Motion is still allowed to run: the point is to let it FINISH, so what is captured is the design the
      animation was taking the page to. Reduced motion would capture a different product. */
 });
+/* THE CAPTURE MARKS ITS OWN BROWSER, so a photograph-only shortcut in app code (a row cap that keeps a dialog
+   frame from being shot down to the fiftieth row) can apply HERE and never on the page a reviewer's Open button
+   lands on, which carries the same URL. Read it through `canvasCapturing()` in the project's states file.
+   `check-canvas.mjs` deliberately does not set it: its live pass is the Open button's stand-in. See trap 22. */
+await context.addInitScript(() => {
+  window.__designCanvasCapture = true;
+});
 
 /**
  * THE WARM PASS, and it is the difference between a reliable capture run and a lottery.
@@ -764,7 +919,12 @@ const context = await browser.newContext({
  */
 if (!process.argv.includes("--no-warm")) {
   const warmUrls = [
-    ...new Set(screens.map((screen) => `${base}${screen.route}`)),
+    /* A wireframe is a static file on another server: nothing to compile, nothing to warm. */
+    ...new Set(
+      screens
+        .filter((screen) => !screen.wireframe)
+        .map((screen) => `${base}${screen.route}`),
+    ),
   ];
   process.stdout.write(`warming ${warmUrls.length} route(s) `);
   const warmPage = await context.newPage();
@@ -837,13 +997,23 @@ async function captureOne(screen, secondPass = false) {
   /* A screen's own override wins; otherwise its DEVICE's viewport, which the screens endpoint has already
      resolved (`deviceViewport`). A phone is photographed at a phone's size without any screen having to name it,
      which is the whole point of declaring a device rather than a viewport per frame. */
+  /* EVERY SCREEN SETS ITS VIEWPORT, INCLUDING A PLAIN DESKTOP ONE. This fell
+     through to `null` and skipped `setViewportSize` entirely, which is not
+     "leave it at the canvas default": the page keeps whatever the PREVIOUS
+     screen left it at. On a canvas that mixes devices the phone frame set 390
+     and every desktop frame captured after it was laid out at 390 while its
+     picture was still written at the canvas's 1440 — a desktop frame carrying
+     the mobile tab bar and a 605px column inside a 1440px shot. It was
+     photographed, committed, and caught by the owner rather than by this file.
+     The canvas viewport IS the desktop default, so name it rather than relying
+     on the page not having been moved. */
   const want =
     screen.viewport?.w && screen.viewport?.h
       ? screen.viewport
       : screen.deviceViewport?.w && screen.deviceViewport?.h
         ? screen.deviceViewport
-        : null;
-  if (want) await page.setViewportSize({ width: want.w, height: want.h });
+        : viewport;
+  await page.setViewportSize({ width: want.w, height: want.h });
   /**
    * AND EVERY MEASUREMENT BELOW IS AGAINST THIS SCREEN'S VIEWPORT, not the canvas's.
    *
@@ -851,8 +1021,9 @@ async function captureOne(screen, secondPass = false) {
    * short page, cropped to 900, and recorded as 900 tall — a frame 56px taller than the device it is meant to be.
    * One name, resolved once, used by the whole-page rule and by the shot's own height.
    */
-  const shotViewport = want ?? viewport;
-  const url = `${base}${screen.url}`;
+  const shotViewport = want;
+  /* A wireframe's url is already absolute — its own server, not the app's base. */
+  const url = screen.wireframe ? screen.url : `${base}${screen.url}`;
   const started = Date.now();
   /* Two different waits can run out, and only one of them is a problem. A page that never finishes loading
      cannot be captured honestly; an animation that never ends is ordinary (a spinner, a marquee, a CSS
@@ -920,6 +1091,20 @@ async function captureOne(screen, secondPass = false) {
      * has hidden inside it. Small scrollers are ignored on purpose — a 200px dropdown list is not the design
      * being longer than a screen — so only an element at least half the viewport tall counts.
      */
+    /* THE PAGE MUST BE LAID OUT AT THE WIDTH ITS PICTURE CLAIMS. The viewport is
+       set above, so this can only fail if something moved it, and a frame whose
+       layout and picture disagree is exactly the defect that shipped once: a
+       desktop screen laid out at a phone's width inside a desktop-sized shot.
+       Cheap to check, and it turns a silently wrong picture into a named
+       failure. */
+    const laidOutAt = await page.evaluate(() => window.innerWidth);
+    /* Not an equality check: a scrollbar can cost a handful of pixels, and the
+       failure this exists for is a whole device apart (390 against 1440). */
+    if (Math.abs(laidOutAt - shotViewport.w) > 24) {
+      throw new Error(
+        `laid out at ${laidOutAt}px but its picture is ${shotViewport.w}px wide — the viewport moved under this screen`,
+      );
+    }
     const scrolls = await page.evaluate((vh) => {
       const pinned = (node) => {
         for (let at = node; at && at !== document.documentElement; at = at.parentElement) {
@@ -1140,12 +1325,79 @@ async function captureOne(screen, secondPass = false) {
       for (const frame of page.frames()) {
         texts.push(
           await frame
+            .evaluate(() => {
+              /* A FRAME ABOUT A DIALOG IS PROVED INSIDE THAT DIALOG, not against
+                 the page behind it. Reading `document.body` let the chrome under
+                 an open dialog satisfy a claim, and three wrong frames shipped
+                 on it: a dialog frame whose only claim was the document BEHIND
+                 the dialog passed without the dialog ever opening, and a frame
+                 for a "Viewed" quote passed on an EXPIRED one because "Viewed"
+                 is a filter chip in the list underneath.
+                 So when anything is open, the page behind it is not evidence.
+
+                 THE WHOLE OPEN STACK COUNTS, not only its top. Reading the
+                 innermost dialog alone put a second unreachable surface in its
+                 place: an app whose editor IS a dialog, and which opens the
+                 scanner over a brand-new document by design, left every claim
+                 about that document unprovable from any route, because the
+                 scanner was always the innermost thing open. A frame whose
+                 subject cannot be reached at all is worse than a loose claim.
+                 The stack is the surface; the body is it only when nothing is
+                 open. A claim that must prove the top dialog names copy that
+                 only the top dialog carries. */
+              const open = Array.from(
+                document.querySelectorAll('[role="dialog"],[role="alertdialog"]'),
+              ).filter((el) => {
+                if (el.getAttribute("aria-hidden") === "true") return false;
+                const box = el.getBoundingClientRect();
+                return box.width > 0 && box.height > 0;
+              });
+              if (open.length === 0) return document.body?.innerText ?? "";
+              /* Nested dialogs portal to the body, so one is rarely inside the
+                 other: join them rather than walking a tree that is not there. */
+              return open.map((el) => el.innerText ?? "").join("\n");
+            })
+            .catch(() => ""),
+        );
+      }
+      return texts.join("\n");
+    };
+
+    /* WHAT IS FORBIDDEN IS FORBIDDEN ANYWHERE, so absences read the whole
+       document rather than the open surface. A first-run overlay behind an open
+       dialog is still an overlay in the picture, and scoping the positive claims
+       to the dialog stack would otherwise have stopped seeing it. */
+    const readWholeDocument = async () => {
+      const texts = [];
+      for (const frame of page.frames()) {
+        texts.push(
+          await frame
             .evaluate(() => document.body?.innerText ?? "")
             .catch(() => ""),
         );
       }
       return texts.join("\n");
     };
+
+    /**
+     * A SKELETON IS NOT A SCREEN. The shutter waits for network quiet and two
+     * identical frames, and a list whose query is still out satisfies both: the
+     * placeholders are steady and nothing is in flight. A frame went out showing
+     * eight shimmering rows and "0 quotes" while its claims — the title and the
+     * column headings — were all chrome that paints before any row loads.
+     *
+     * So loading placeholders are waited out, and if they outlast the budget the
+     * frame says so rather than photographing them.
+     */
+    const countSkeletons = () =>
+      page
+        .evaluate(
+          () =>
+            document.querySelectorAll(
+              '[aria-busy="true"],[data-loading="true"],[data-skeleton],.animate-pulse',
+            ).length,
+        )
+        .catch(() => 0);
     /**
      * FIRST, WAIT FOR THE PIN ITSELF. `CanvasStatePin` sets `data-canvas-pinned` on `<html>` in the effect that
      * reveals the page, which is the one signal that means "the store holds the pinned state AND React has
@@ -1173,6 +1425,19 @@ async function captureOne(screen, secondPass = false) {
     }
 
     const wanted = pinned ? (screen.expect ?? []) : [];
+    /* A FRAME THAT IS THE LOADING STATE IS NOT A FRAME THAT CAUGHT ONE. `animated`
+       already says "this surface never settles, photograph one instant of it", and
+       the canvases that declare it do so on the wait itself: five pulsing bars while
+       the order arrives. Failing those on their own placeholders makes the one
+       screen nobody can photograph the one screen every list needs. */
+    let skeletons = screen.animated ? 0 : await countSkeletons();
+    if (skeletons > 0) {
+      const settleBy = Date.now() + CLAIM_BUDGET_MS;
+      while (Date.now() < settleBy && skeletons > 0) {
+        await page.waitForTimeout(250);
+        skeletons = await countSkeletons();
+      }
+    }
     let page_text = await readPage();
     if (wanted.length > 0) {
       /* And still a bounded re-read, for text that arrives just after the pin: a lazy list, a deferred image's
@@ -1190,13 +1455,23 @@ async function captureOne(screen, secondPass = false) {
       claim,
       met: page_text.includes(claim),
     }));
+    if (skeletons > 0)
+      claims.push({
+        claim: `the surface finished loading within ${CLAIM_BUDGET_MS / 1000}s (${skeletons} placeholder(s) still on screen)`,
+        met: false,
+      });
     /* One honest failure instead of a list of misleading ones. */
     if (!pinned)
       claims.push({
         claim: `the pinned state "${screen.state}" was applied within ${PIN_TIMEOUT_MS / 1000}s`,
         met: false,
       });
-    /* An absence, written so the manifest reads as a sentence: the failure line prints the claim verbatim. */
+    /* An absence, written so the manifest reads as a sentence: the failure line prints the claim verbatim.
+       IT READS THE FRAME'S OWN SURFACE, not the document, because `expectMissing` is the positive claim
+       inverted — the state this frame is NOT — and the page behind an open dialog is full of other states'
+       words. A detail frame for a SENT quote separates itself from the superseded one by not saying
+       "Superseded"; the list underneath says it on some row almost always. */
+    const whole_text = await readWholeDocument();
     for (const absent of screen.expectMissing ?? []) {
       claims.push({
         claim: `nothing saying "${absent}"`,
@@ -1209,7 +1484,7 @@ async function captureOne(screen, secondPass = false) {
     for (const banned of declaration.forbid ?? []) {
       claims.push({
         claim: `nothing saying "${banned}" — text this canvas forbids on every frame`,
-        met: !page_text.includes(banned),
+        met: !whole_text.includes(banned),
       });
     }
     if (focusClaim) claims.push(focusClaim);
@@ -1627,12 +1902,15 @@ writeFileSync(
   "utf8",
 );
 
-/* A comment points at a rectangle on a picture. If that picture has been taken again, what is under the
-   rectangle may not be what was being complained about — so the comment is flagged rather than trusted. */
+/* The sweep runs here too, on the full path, beside the orphan prune it belongs to. */
 if (existsSync(COMMENTS)) {
   const file = JSON.parse(readFileSync(COMMENTS, "utf8"));
+  const { kept, swept } = sweepAnsweredComments(
+    file.comments ?? [],
+    declaredIds,
+  );
   let flagged = 0;
-  const comments = (file.comments ?? []).map((comment) => {
+  const comments = kept.map((comment) => {
     /**
      * `byScreen`, NOT `shots.find(...)` — and this was a real bug, twice in one session.
      *
@@ -1665,17 +1943,31 @@ if (existsSync(COMMENTS)) {
     flagged += 1;
     return { ...comment, stale: true };
   });
-  if (flagged > 0) {
+  if (flagged > 0 || swept.length > 0) {
+    if (swept.length > 0) historyCommit("as found, before the capture swept it");
     writeFileSync(
       COMMENTS,
       `${JSON.stringify({ ...file, updatedAt: new Date().toISOString(), comments }, null, 2)}\n`,
       "utf8",
     );
-    console.log(
-      `\n${flagged} comment(s) marked stale: the screen under them was captured again`,
+    historyCommit(
+      swept.length > 0
+        ? `capture swept ${swept.join(", ")}`
+        : `capture marked ${flagged} stale`,
     );
+    if (flagged > 0)
+      console.log(
+        `\n${flagged} comment(s) marked stale: the screen under them was captured again`,
+      );
+    if (swept.length > 0)
+      console.log(
+        `\n${swept.length} answered comment(s) removed with the screen they pointed at: ${swept.join(", ")}`,
+      );
   }
 }
+
+/* Every write in this file is its own; `saveSweep` is the early exit's, and this path writes above with the
+   stale marks folded in, so the two never both write. */
 
 if (notes.length > 0) {
   console.log("\nnotes:");
