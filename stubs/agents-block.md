@@ -1,0 +1,13 @@
+<!-- design-canvas:agents. Written by the design-canvas installer and replaced on every install. Local to this working copy: never committed -->
+## UI work: reuse what exists
+
+1. Before you write any UI, look up what exists: `node design-canvas/components.mjs find "<what you need, in plain words>"`, then `node design-canvas/components.mjs show <file>` for the part you pick. Build with that part. A look it lacks is a new variant on it, never a second component.
+2. The `decided` lines it prints are the decisions already made about that part. Follow them.
+3. When a decision is made about a component, write it in that component's file, beside the code it governs, as a dated comment that states the decision in neutral words: `// <YYYY-MM-DD>: <the decision>`, with no names and no quotes. Any comment with a date in it is read back by the lookup.
+4. When you add or change a shared component (one meant to be reused), add or update its set in `design-canvas/project/system.tsx` (the shape is at the top of that file), then photograph it with `node design-canvas/system-capture.mjs --only <set id>` while the app runs. It then shows on the canvas's Design System tab.
+5. `node design-canvas/components.mjs state` counts the look-alikes: parts doing one job, and raw `<button>`s. Never add to them.
+6. Before any canvas work (a capture, a round, a review), load the design-canvas skill. A canvas command that succeeds prints `next:` lines last: do them before you report. Never ask whether to recapture: the canvas a reviewer has open refreshes at the end of a turn that changed code, every other canvas when it is opened.
+7. Every line you add to an app file only for the canvas (a pinned state, a review-only flag, a dev-only setter, a config line) ends in a `// design-canvas:local` comment, or sits in a block that opens with a `design-canvas:local begin` comment line and closes with a `design-canvas:local end` one, in the file's own comment syntax. Add lines, never edit the team's: to change a value, add a line that overrides it. Marked lines stay in this working copy and no commit carries them.
+8. When the developers will need something you cannot finish here (a real API in place of mock data, a missing permission), put a comment line on the exact spot: `// design-canvas:handoff <what they need>, because <why>`. At the next push these lines are collected into one list and removed from the code: show that list to the user in chat, as it is.
+9. When a git command says a local line no longer fits an updated file, put it back where it belongs, marked, and say so in one line.
+<!-- /design-canvas:agents -->

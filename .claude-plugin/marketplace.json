@@ -1,0 +1,14 @@
+{
+  "name": "design-canvas",
+  "owner": {
+    "name": "volomydyr"
+  },
+  "description": "A design-review canvas for any project: every screen and every state of the real running app on one pannable surface.",
+  "plugins": [
+    {
+      "name": "design-canvas",
+      "source": "./",
+      "description": "Every screen and every state of the real running app on one pannable canvas, grouped by kind and drawn as user flows, with a comment layer that hands an agent the annotated picture of what was pointed at."
+    }
+  ]
+}
