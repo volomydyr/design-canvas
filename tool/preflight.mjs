@@ -49,7 +49,7 @@ import { applyNetwork, hasNetwork, mergeNetwork } from "./network.mjs";
 import { filesReachedFrom } from "./closure.mjs";
 import { declarationFor, loadDeclarations, slugsOf } from "./declarations.mjs";
 import { realCodeReport } from "./parity.mjs";
-import { checkLocaleFiles, claimFindings, collectClaims, coverageGaps, coverageNote, detectLocales, lintAll, loadProjectTexts, unknownStateProblems } from "./preflight-rules.mjs";
+import { checkLocaleFiles, claimFindings, collectClaims, coverageGaps, coverageNote, detectLocales, lintAll, loadProjectTexts, unknownStates } from "./preflight-rules.mjs";
 import { loadSettings, runSettings } from "./project-settings.mjs";
 import { readSurfaceText, runSteps } from "./steps.mjs";
 
@@ -134,7 +134,9 @@ const screens = decl.screens ?? [];
   const canvasRel = path.relative(ROOT, HERE).split(path.sep).join("/");
   const files = filesReachedFrom([statesRel], ROOT).filter((rel) => rel.startsWith(`${canvasRel}/project/`));
   const texts = files.length === 0 ? null : files.map((rel) => readFileSync(path.join(ROOT, rel), "utf8"));
-  problems.declaration.push(...unknownStateProblems(screens, texts));
+  const states = unknownStates(screens, texts);
+  problems.declaration.push(...states.problems);
+  notes.push(...states.notes);
 }
 /* COVERAGE: the dialogs, sheets, menus and addresses the declared screens reach that no frame on any canvas shows. A note. */
 {
@@ -292,7 +294,7 @@ if (has("live")) {
         const asked = new URL(url, "http://x").searchParams;
         const landed = new URL(page.url()).searchParams;
         const lost = [...asked.keys()].filter((key) => key !== "canvas" && !landed.has(key));
-        if (lost.length > 0) return [`${screen.id}: DEAD SEED. ${screen.url} lost ${lost.map((key) => `?${key}`).join(", ")} on the way (it landed on ${new URL(page.url()).pathname}${new URL(page.url()).search}), so the frame shows a page that is not the one it names`];
+        if (lost.length > 0) return [`${screen.id}: dead seed: ${screen.url} lost ${lost.map((key) => `?${key}`).join(", ")} on the way (it landed on ${new URL(page.url()).pathname}${new URL(page.url()).search}), so the frame shows a page that is not the one it names`];
         if (screen.steps?.length) {
           try {
             await runSteps(page, screen.steps, { dismissals });

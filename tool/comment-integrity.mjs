@@ -118,7 +118,7 @@ export function refusalFailures(plan) {
     if (one.answered.length > 0) parts.push(`answered, waiting for the reviewer's Approve: ${one.answered.join(", ")}`);
     lines.push(
       `frame "${one.frame}" is no longer declared and still carries ${one.unread.length + one.answered.length} comment(s) (${parts.join("; ")})` +
-        (one.released && one.unread.length > 0 ? `. \`successors["${one.frame}"] = null\` releases ANSWERED notes only: drain the unread ones first` : ""),
+        (one.released && one.unread.length > 0 ? `. \`successors["${one.frame}"] = null\` releases answered notes only: drain the unread ones first` : ""),
     );
   }
   lines.push(...plan.problems);

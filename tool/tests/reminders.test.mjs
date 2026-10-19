@@ -144,7 +144,7 @@ test("the capture, the round and the oracle's drain gate share one list, so none
   /* Draining a verdict deletes it: every tool that names comments to drain must read them through `undrainedIn`. */
   for (const tool of ["capture.mjs", "round.mjs", "check-canvas.mjs"]) {
     const source = readFileSync(path.join(SKILL, "tool", tool), "utf8");
-    assert.match(source, /undrainedIn\(/, `${tool} reads the drain list through undrainedIn`);
+    assert.match(source, /undrained(?:In|ByCause)\(/, `${tool} reads the drain list through undrainedIn`);
     assert.doesNotMatch(source, /stale === true && !\w+\.consumedAt/, `${tool} keeps no list of its own`);
   }
 });
@@ -218,7 +218,7 @@ const hookEntries = (repo, event) =>
     (entry.hooks ?? []).some((hook) => String(hook.command).includes(MARK)),
   );
 
-test("the installer merges the two hook entries once, beside the hooks already there, replaces an older reminder entry, and ships the files", () => {
+test("the installer merges its hook entries once, beside the hooks already there, replaces an older reminder entry, and ships the files", () => {
   const dir = scratch();
   const repo = repoIn(dir);
   mkdirSync(path.join(repo, ".claude"));
@@ -230,21 +230,21 @@ test("the installer merges the two hook entries once, beside the hooks already t
   assert.equal(install(dir, repo).status, 0);
   assert.equal(install(dir, repo).status, 0);
   const entries = hookEntries(repo, "PreToolUse");
-  assert.equal(entries.length, 1, "one entry however many installs");
-  assert.equal(entries[0].matcher, "Bash|Write|Edit|MultiEdit");
+  assert.deepEqual(entries.map((entry) => entry.matcher), ["Bash", "Write|Edit|MultiEdit"], "the same two entries however many installs");
   assert.equal(hookEntries(repo, "Stop").length, 1, "and one at the end of a turn");
   const all = JSON.parse(readFileSync(path.join(repo, ".claude", "settings.local.json"), "utf8")).hooks.PreToolUse;
-  assert.equal(all.length, 2, "the older reminder entry is gone");
+  assert.equal(all.length, 3, "the older reminder entry is gone");
   assert.equal(all[0].hooks[0].command, "echo mine", "the project's own hook is kept, first");
   for (const file of ["reminders.mjs", "hook.mjs", "checks-answer.mjs"]) assert.ok(readFileSync(path.join(repo, "design-canvas", file), "utf8").length > 0);
 });
 
-test("a local settings file git does not ignore, or tracks, gets no entry and one line, and the install still exits 0", () => {
+test("a local settings file git does not ignore gets the exclude rule and its entries; a tracked one gets no entry and one line; the install exits 0", () => {
   const dir = scratch();
   const repo = repoIn(dir, { ignore: false });
   const out = install(dir, repo);
   assert.equal(out.status, 0, out.stdout + out.stderr);
-  assert.match(out.stdout, /Canvas hooks: NOT added\. git does not ignore \.claude\/settings\.local\.json/);
+  assert.match(out.stdout, /Canvas hooks: \.claude\/settings\.local\.json was not ignored by git, so the rule is now in /);
+  assert.equal(hookEntries(repo, "Stop").length, 1);
   assert.equal(spawnSync("git", ["-C", repo, "status", "--short"], { encoding: "utf8", env: envFor(dir) }).stdout.includes(".claude"), false);
 
   const dir2 = scratch();
@@ -254,7 +254,7 @@ test("a local settings file git does not ignore, or tracks, gets no entry and on
   execFileSync("git", ["add", "-f", ".claude/settings.local.json"], { cwd: tracked, env: envFor(dir2) });
   const second = install(dir2, tracked);
   assert.equal(second.status, 0, second.stdout + second.stderr);
-  assert.match(second.stdout, /Canvas hooks: NOT added\. \.claude\/settings\.local\.json is tracked by git/);
+  assert.match(second.stdout, /Canvas hooks: not added\. \.claude\/settings\.local\.json is tracked by git/);
   assert.equal(readFileSync(path.join(tracked, ".claude", "settings.local.json"), "utf8"), "{}\n", "byte for byte as it was");
 });
 
@@ -262,4 +262,20 @@ test("the end of a turn names the canvases not open that hold out-of-date frames
   assert.equal(afterTurn({ elsewhere: [] }), null);
   assert.equal(afterTurn({ elsewhere: [{ slug: "tablet", count: 4 }, { slug: "phone", count: 3 }] }), "design-canvas: 7 frame(s) on canvases not open now are out of date (tablet 4, phone 3); each canvas refreshes when it is opened");
   assert.doesNotMatch(afterTurn({ elsewhere: [{ slug: "a", count: 1 }] }), /\.$|[\u2013\u2014]/, "short copy: no final period, no dashes");
+});
+
+test("an undrained note is this work's when its screen was photographed after it was written, and inherited otherwise", async () => {
+  const { undrainedByCause } = await import("../reminders.mjs");
+  const comments = [
+    { id: "c1", screenId: "home", stale: true, consumedAt: null, createdAt: "2026-01-01T10:00:00.000Z" },
+    { id: "c4", screenId: "list", stale: true, consumedAt: null, createdAt: "2026-01-03T10:00:00.000Z" },
+    { id: "c5", screenId: "gone", stale: true, consumedAt: null, createdAt: "2026-01-03T10:00:00.000Z" },
+    { id: "c6", screenId: "home", stale: true, consumedAt: "2026-01-02T00:00:00.000Z", createdAt: "2026-01-01T10:00:00.000Z" },
+    { id: "c7", screenId: "home", kind: "like", stale: true, consumedAt: null, createdAt: "2026-01-01T10:00:00.000Z" },
+  ];
+  const shots = [
+    { screenId: "home", capturedAt: "2026-01-02T10:00:00.000Z" },
+    { screenId: "list", capturedAt: "2026-01-02T10:00:00.000Z" },
+  ];
+  assert.deepEqual(undrainedByCause(comments, shots), { recaptured: ["c1"], inherited: ["c4", "c5"] });
 });

@@ -22,7 +22,7 @@ is the short version for anyone working in this repo.
 
 Every tool reads `design-canvas/settings.json` (`appUrl`, `storageState`, `browserChannel`, `loginRoute`, `locales`,
 `allowWrites`, `buildFrom`), so none needs a port typed; there is no default port. `--url` overrides the address for one
-run, and every tool takes `--canvas <slug>` (default `main`). Each tool's last line is its verdict.
+run, and the canvas tools take `--canvas <slug>` (default `main`). Each tool's last line is its verdict.
 
 ```bash
 node design-canvas/round.mjs --canvas <slug> --only <ids> --drain <comment ids>   # a review round, against the dev server
@@ -119,7 +119,7 @@ Run `node design-canvas/overlay.mjs uninstall`, then delete:
 - the `design-canvas/` folder, `.next-canvas/` and the five route stubs: `app/design-canvas/page.tsx`,
   `app/design-canvas/[canvas]/page.tsx`, `app/design-canvas/system/[set]/page.tsx`, `app/api/design-canvas/comments/route.ts`,
   `app/api/design-canvas/shots/route.ts` (under `src/app` when the app keeps its routes there)
-- the installer's lines in the repository's exclude list, and the three `design-canvas/hook.mjs` entries in
+- the installer's lines in the repository's exclude list, and the four `design-canvas/hook.mjs` entries in
   `.claude/settings.local.json`
 - for a shared canvas, the canvas lines in `.gitignore` and `.gitattributes`, and anything marked `DELETE WITH: the
   design-canvas/ folder`
@@ -137,6 +137,6 @@ Fill in, and keep it to what a fresh reader cannot get from the code:
 
 - **Ports and commands.** The port captures run against (the dev server's address is in `settings.json`), and any
   `package.json` script that wraps a canvas command.
-- **Seams.** Every edit outside `design-canvas/` this install needed (linter and formatter exemptions, the Tailwind glob,
-  the layout branch, the state pin), with the reason, and the file-by-file list to undo when the folder goes.
+- **Seams.** Every edit outside `design-canvas/` this install needed (linter and formatter exemptions, the layout branch,
+  the state pin), with the reason, and the file-by-file list to undo when the folder goes.
 - **Gaps.** What is known not to work here yet, so the next reader stops rediscovering it.

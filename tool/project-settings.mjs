@@ -174,7 +174,7 @@ export function requireAppUrl(settings, who) {
     who,
     settings.file
       ? `design-canvas/settings.json names no "appUrl": write where this project's dev server answers`
-      : `there is no design-canvas/settings.json, and this tool does not guess a port (3000 is usually a neighbour's app). Write it once: ${SETTINGS_EXAMPLE}`,
+      : `there is no design-canvas/settings.json, and this tool does not guess a port (3000 is usually a neighbor's app). Write it once: ${SETTINGS_EXAMPLE}`,
   );
 }
 

@@ -7,7 +7,7 @@ cannot show, which belongs in the honest list at handover.
 ## 1. The flow layout geometry (open)
 
 The edges are honest; the geometry is not. A long flow is a very wide strip. At a zoom where the shape of the diagram is
-legible, every frame in it is a grey rectangle; at a zoom where the screens can be judged, the shape is off-screen. Sparse
+legible, every frame in it is a gray rectangle; at a zoom where the screens can be judged, the shape is off-screen. Sparse
 rows also leave large empty areas inside a group's panel, and whole-page captures make frame heights very unequal, which
 makes it worse.
 

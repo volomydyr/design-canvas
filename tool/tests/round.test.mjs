@@ -41,9 +41,10 @@ import {
   stateNames,
   templateMatches,
   unknownStateProblems,
+  unknownStates,
 } from "../preflight-rules.mjs";
 import { MAX_STEPS, describeStep, describeSteps, parseSteps, runSteps } from "../steps.mjs";
-import { CONTROLS, FLAG_PCT, compareRgba, judge, regionRect, removedControls, removedLines, reportVisualChange } from "../visual-delta.mjs";
+import { CONTROLS, FLAG_PCT, compareRgba, judge, regionRect, removedControls, removedLines, reportVisualChange, WORDS } from "../visual-delta.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const TOOL = path.join(HERE, "..");
@@ -154,7 +155,7 @@ test("null releases ANSWERED notes on purpose, and never an unread one", () => {
   assert.equal(mixed.refused.length, 1);
   assert.deepEqual(mixed.refused[0].unread, ["c2"]);
   assert.equal(mixed.refused[0].released, true);
-  assert.match(refusalFailures(mixed)[0], /releases ANSWERED notes only: drain the unread ones first/);
+  assert.match(refusalFailures(mixed)[0], /releases answered notes only: drain the unread ones first/);
 });
 
 test("a like or a dislike is not a note: it goes with the option it judged, as it always did", () => {
@@ -505,7 +506,7 @@ test("settings: no file is an empty object, and a tool that needs the address sa
   assert.equal(JSON.parse(ok.stdout).s.appUrl, null);
   const need = spawnSync(process.execPath, ["--input-type=module", "-e", settingsCode(canvas).replace('process.argv.includes("need")', "true")], { encoding: "utf8" });
   assert.equal(need.status, 2);
-  assert.match(need.stderr, /does not guess a port \(3000 is usually a neighbour's app\)/);
+  assert.match(need.stderr, /does not guess a port \(3000 is usually a neighbor's app\)/);
   assert.match(need.stderr, /"appUrl": "http:\/\/localhost:<this project's dev port>"/);
 });
 
@@ -814,7 +815,7 @@ test("in a browser: the report decodes two real pictures and says what changed, 
     assert.equal(by.unasked.flag, "changed outside the commented region", "c2 pointed at the black box and the blue one is new");
     assert.ok(by.unasked.outsidePct > 5);
     assert.ok(by.unasked.bbox.x >= 0 && by.unasked.bbox.w > 100);
-    assert.ok(lines.join("\n").includes("1 FLAGGED for changing where nobody asked: unasked"));
+    assert.ok(lines.join("\n").includes("1 flagged for changing where nobody asked: unasked"));
     const saved = JSON.parse(readFileSync(path.join(dir, "delta.json"), "utf8"));
     assert.equal(saved.frames.length, 4);
     assert.ok(readFileSync(path.join(dir, "before", "asked.webp")).length > 0, "the picture that was replaced is kept, for the sheet");
@@ -927,7 +928,18 @@ test("a pinned state the states file does not have is a declaration problem, and
   /* No states file at all: every pinned frame says so. */
   assert.match(unknownStateProblems([{ id: "h", state: "any" }], null)[0], /^h: pins the state "any" and this project has no design-canvas\/project\/states\.ts/);
   assert.deepEqual(unknownStateProblems([{ id: "i" }], null), [], "nothing pinned, nothing to say");
-  assert.deepEqual(stateNames(["const s = `plain-${x}`;"]).prefixes, ["plain-"]);
+  assert.deepEqual(stateNames(["const s = { [`plain-${x}`]: apply };"]).prefixes, ["plain-"]);
+});
+
+test("a state named only inside a value is no state, and names built in code from elsewhere make an unknown pin a note", () => {
+  const seeded = `export const STATES = { "ready": () => seed({ status: "Pending" }) };\n`;
+  assert.equal(unknownStates([{ id: "x", state: "Pending" }], [seeded]).problems.length, 1, "a seed value is not a state");
+  assert.deepEqual(unknownStates([{ id: "x", state: "ready" }], [seeded]), { problems: [], notes: [] });
+  const fromFixtures = `import { SCENARIOS } from "@/mocks/scenarios";\nexport const STATES = Object.fromEntries(SCENARIOS.map((s) => [s.id, () => s.apply()]));\n`;
+  const found = unknownStates([{ id: "list-empty", state: "empty-list" }], [fromFixtures]);
+  assert.deepEqual(found.problems, []);
+  assert.match(found.notes[0], /builds its state names in code, so 1 pinned state\(s\) could not be checked from its text \("empty-list"\)/);
+  assert.equal(unknownStates([{ id: "y", state: "nope" }], [`const list = [a, b];\nexport const STATES = { ok: () => undefined };\n`]).problems.length, 1, "an array of names is not names built in code");
 });
 
 /* ------------------------------------------------------------------ coverage: what the declared screens reach and no frame shows */
@@ -1020,6 +1032,32 @@ test("removed controls: per option, what today's screen shows that the option no
   assert.deepEqual(removedControls({ explorations, shots, ids: new Set(["table"]) }).map((one) => one.frame), ["table"]);
   assert.deepEqual(removedControls({ explorations, shots, ids: new Set(["list"]) }).map((one) => one.frame), ["cards", "table"]);
   assert.deepEqual(removedLines([]), []);
+  /* A label the option prints as plain text (its words), digits and all, is still shown. */
+  const printed = removedControls({
+    explorations: [{ id: "layout", original: "list", screens: [{ id: "cards", redesigns: "list" }] }],
+    shots: [
+      { screenId: "list", controls: ["Visitors (7d)", "Export"] },
+      { screenId: "cards", controls: ["Grid view"], words: ["Lisbon", "Visitors (7d)", "120"] },
+    ],
+  });
+  assert.deepEqual(printed[0].removed, ["Export"]);
+});
+
+test("in a browser: the rows of a table or a long list are data, so their links and names are no controls, and the words a page prints are all kept", inBrowser, async () => {
+  const browser = await chromium.launch();
+  try {
+    const page = await browser.newPage();
+    const rows = ["Ada Park", "Ben Ito", "Cai Ruiz", "Dee Moss"];
+    await page.setContent(`<main><h1>Members</h1><button>Export</button>
+      <table><thead><tr><th>Name</th></tr></thead><tbody>${rows.map((name) => `<tr><td><a href="/c/${name}">${name}</a></td></tr>`).join("")}</tbody></table>
+      <ul>${rows.map((name) => `<li><button>${name} details</button></li>`).join("")}</ul><p>Visitors (7d)</p></main>`);
+    const controls = await page.evaluate(CONTROLS);
+    assert.deepEqual([...controls].sort(), ["Export", "Members", "Name"]);
+    const words = await page.evaluate(WORDS);
+    for (const one of ["Ada Park", "Visitors (7d)", "Export"]) assert.ok(words.includes(one), one);
+  } finally {
+    await browser.close();
+  }
 });
 
 test("in a browser: the controls a page records are its visible buttons, links, tabs, fields, labels, headings and short label lines", inBrowser, async () => {
@@ -1032,7 +1070,7 @@ test("in a browser: the controls a page records are its visible buttons, links, 
       <p>A sentence of prose is far too long to be a label on any screen at all</p><p>Short label</p><p>12 trips</p><p>Sep 18, 2026</p>
       <table><tr><th>Destination</th></tr><tr><td>Lisbon</td></tr></table></main>`);
     const controls = await page.evaluate(CONTROLS);
-    assert.deepEqual([...controls].sort(), ["All trips", "Close", "Destination", "Lisbon", "New Trip", "Notes", "Search trips", "Short label", "Trips", "Upcoming"]);
+    assert.deepEqual([...controls].sort(), ["All trips", "Close", "Destination", "New Trip", "Notes", "Search trips", "Short label", "Trips", "Upcoming"], "a table's rows are data, not controls");
     for (const absent of ["Hidden", "Invisible", "New Trip All tripsNot a link", "A sentence of prose is far too long to be a label on any screen at all", "12 trips", "Sep 18, 2026"])
       assert.ok(!controls.includes(absent), absent);
   } finally {

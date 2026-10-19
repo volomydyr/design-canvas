@@ -6,16 +6,14 @@
  *   node --test tool/tests/install-checks.test.mjs
  *
  * WHAT IS PROVEN HERE:
- *   - Every install merges the same two entries (PreToolUse and Stop, both `design-canvas/hook.mjs`), keeps every other key and hook
+ *   - Every install merges the same entries (PreToolUse for Bash and for the edit tools, PostToolUse, Stop, all `design-canvas/hook.mjs`), keeps every other key and hook
  *     of a file that is already there, and a second run adds nothing. An empty file, a whitespace-only file and a file with a
  *     byte-order mark are all read.
  *   - `--checks yes|no` (and `=yes`, `=no`) only records the answer, on the machine, never in the project: one JSON file
  *     ($CANVAS_ANSWERS_FILE here, so no test touches the real one), keyed by the git common dir, so every worktree of a repo
  *     shares it. Anything else, or two of them, is refused before the canvas is installed.
- *   - Git is asked, not trusted: with a yes, the ignore rule goes into the exclude list when the file is not ignored, never into
- *     .gitignore, and only when that list is inside --target (a linked worktree's list is the main repository's; a subfolder
- *     project's is above it). Without a yes nothing is written for an unignored file. (The canvas's own exclude lines, which keep
- *     the canvas local, are the repository's and are covered in install-overlay.test.mjs.)
+ *   - Git is asked, not trusted: whatever the answer, the ignore rule goes into the repository's exclude list when the file is not
+ *     ignored, never into .gitignore, in a linked worktree and a subfolder project too (the same list the canvas's own lines go in).
  *   - A tracked file, a file that is not valid JSON and a `.claude` that is not a folder are left byte for byte alone, with one line;
  *     the install exits 1 only when the answer is yes.
  *   - `check-install.mjs` fails on the entries only when this machine's answer for the project is yes, and says nothing otherwise.
@@ -97,6 +95,7 @@ const writeLocal = (repo, text) => {
 /** The canvas's entries for one event (the hooks that run design-canvas/hook.mjs). */
 const entriesOf = (settings, event) =>
   (settings.hooks?.[event] ?? []).filter((entry) => (entry.hooks ?? []).some((hook) => String(hook.command).includes(MARK)));
+/* PreToolUse has two entries (Bash, given a minute for a long push scan, and the edit tools, ten seconds); Stop has one. */
 const both = (settings) => [entriesOf(settings, "PreToolUse").length, entriesOf(settings, "Stop").length];
 const readAnswers = (s) => (existsSync(s.answers) ? JSON.parse(readFileSync(s.answers, "utf8")) : {});
 const ignored = (s, repo) => spawnSync("git", ["-C", repo, "check-ignore", "-q", LOCAL.split(path.sep).join("/")], { env: envFor(s.answers) }).status === 0;
@@ -125,10 +124,11 @@ test("--checks yes records true, and the two entries are merged into an existing
   assert.deepEqual(after.hooks.PostToolUse[0], before.hooks.PostToolUse[0], "the unrelated after-hook is first and unchanged");
   assert.equal(entriesOf(after, "PostToolUse").length, 1, "and the canvas's own after-hook for git commands is beside it");
   assert.deepEqual(after.hooks.PreToolUse[0], before.hooks.PreToolUse[0], "the unrelated hook is first and unchanged");
-  assert.deepEqual(both(after), [1, 1]);
-  assert.equal(entriesOf(after, "PreToolUse")[0].matcher, "Bash|Write|Edit|MultiEdit");
+  assert.deepEqual(both(after), [2, 1]);
+  assert.deepEqual(entriesOf(after, "PreToolUse").map((entry) => [entry.matcher, entry.hooks[0].timeout]), [["Bash", 60], ["Write|Edit|MultiEdit", 10]]);
+  assert.deepEqual(entriesOf(after, "PostToolUse").map((entry) => entry.matcher), ["Bash|Write|Edit|MultiEdit"], "after a git command and after an edit");
   assert.ok(existsSync(path.join(repo, "design-canvas", "hook.mjs")) && existsSync(path.join(repo, "design-canvas", "recapture.mjs")), "the hook files are shipped");
-  assert.deepEqual(both(readLocal((install(s, repo, "--checks", "yes"), repo))), [1, 1], "a second run adds nothing");
+  assert.deepEqual(both(readLocal((install(s, repo, "--checks", "yes"), repo))), [2, 1], "a second run adds nothing");
   const key = path.join(repo, ".git");
   assert.equal(readAnswers(s)[key]?.checksHook, true, JSON.stringify(readAnswers(s)));
   assert.ok(!Number.isNaN(Date.parse(readAnswers(s)[key].at)), "the answer carries an ISO time");
@@ -157,22 +157,22 @@ test("a second yes adds no duplicate entry and no duplicate exclude rule, and le
   assert.equal(Object.keys(readAnswers(s)).length, 1);
 });
 
-test("with a yes, the exclude rule is written when git does not ignore the file, and .gitignore is not touched for it", () => {
+test("whatever the answer, the exclude rule is written when git does not ignore the file, and .gitignore is not touched for it", () => {
   const s = scratch();
   const repo = project(s);
   writeFileSync(path.join(repo, ".gitignore"), "node_modules/\n");
-  assert.equal(install(s, repo).status, 0);
   const gitignore = readFileSync(path.join(repo, ".gitignore"), "utf8");
   assert.equal(ignored(s, repo), false, "precondition: nothing ignores the local settings file yet");
-  assert.ok(!existsSync(localFile(repo)), "and without a yes nothing was written for it");
-  const out = install(s, repo, "--checks", "yes");
+  const out = install(s, repo);
   assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.equal(ignored(s, repo), true, "git now ignores the file");
   const lines = readFileSync(excludeFile(repo), "utf8").split("\n").filter((line) => line.trim() === ".claude/settings.local.json");
   assert.equal(lines.length, 1, "the rule is in the exclude list exactly once");
   assert.equal(readFileSync(path.join(repo, ".gitignore"), "utf8"), gitignore, ".gitignore is byte for byte what it was");
   assert.match(out.stdout, /\.git\/info\/exclude/);
-  assert.deepEqual(both(readLocal(repo)), [1, 1]);
+  assert.deepEqual(both(readLocal(repo)), [2, 1], "and the entries are in, without a yes");
+  assert.equal(install(s, repo, "--checks", "yes").status, 0);
+  assert.equal(readFileSync(excludeFile(repo), "utf8").split("\n").filter((line) => line.trim() === ".claude/settings.local.json").length, 1, "once");
 });
 
 test("--checks=yes is the same as --checks yes, and any other --checks argument, or two of them, is refused before anything is written", () => {
@@ -210,7 +210,7 @@ test("an empty, a whitespace-only and a BOM-prefixed settings.local.json are rea
     const out = install(s, repo, "--checks", "yes");
     assert.equal(out.status, 0, `${name}: ${out.stdout}${out.stderr}`);
     const settings = readLocal(repo);
-    assert.deepEqual(both(settings), [1, 1], name);
+    assert.deepEqual(both(settings), [2, 1], name);
     for (const key of expectedKeys) assert.ok(key in settings, `${name} kept ${key}`);
   }
 });
@@ -222,7 +222,7 @@ test("a file that is not valid JSON, a tracked file and a .claude that is not a 
   const out = install(s, broken, "--checks", "yes");
   assert.equal(out.status, 1);
   assert.equal(readFileSync(localFile(broken), "utf8"), "{ not json");
-  assert.match(out.stdout, /Canvas hooks: NOT added\. \.claude\/settings\.local\.json was left untouched because it is not valid JSON/);
+  assert.match(out.stdout, /Canvas hooks: not added\. \.claude\/settings\.local\.json was left untouched because it is not valid JSON/);
   assert.ok(!out.stdout.includes(ON), "the success line is not printed next to a failure");
 
   const tracked = project(s, "tracked");
@@ -231,7 +231,7 @@ test("a file that is not valid JSON, a tracked file and a .claude that is not a 
   git(tracked, s.answers, "add", "-f", "--", ".claude/settings.local.json");
   const refused = install(s, tracked, "--checks", "yes");
   assert.equal(refused.status, 1, refused.stdout + refused.stderr);
-  assert.match(refused.stdout, /Canvas hooks: NOT added\. \.claude\/settings\.local\.json is tracked by git, so the hooks cannot be added privately/);
+  assert.match(refused.stdout, /Canvas hooks: not added\. \.claude\/settings\.local\.json is tracked by git, so the hooks cannot be added privately/);
   assert.equal(readFileSync(localFile(tracked), "utf8"), original, "the tracked file is byte for byte untouched");
   assert.ok(!readFileSync(excludeFile(tracked), "utf8").includes("settings.local.json"), "no exclude rule was written");
   assert.equal(install(s, tracked).status, 1, "a recorded yes does not slip the entries into a tracked file on a run with no flag either");
@@ -242,7 +242,7 @@ test("a file that is not valid JSON, a tracked file and a .claude that is not a 
   writeFileSync(path.join(file, ".claude"), "not a folder\n");
   const stopped = install(s, file, "--checks", "yes");
   assert.equal(stopped.status, 1, stopped.stdout + stopped.stderr);
-  assert.match(stopped.stdout, /Canvas hooks: NOT added\. \.claude exists in .* but is not a folder, so \.claude\/settings\.local\.json cannot be created/);
+  assert.match(stopped.stdout, /Canvas hooks: not added\. \.claude exists in .* but is not a folder, so \.claude\/settings\.local\.json cannot be created/);
   assert.equal(readFileSync(path.join(file, ".claude"), "utf8"), "not a folder\n", ".claude is untouched");
   assert.ok(!readFileSync(excludeFile(file), "utf8").includes("settings.local.json"), "no exclude rule was written for the settings file");
 });
@@ -290,7 +290,7 @@ test("an answer that cannot be recorded says so, and exits 1", (t) => {
     encoding: "utf8",
   });
   assert.equal(out.status, 1, out.stdout + out.stderr);
-  assert.match(out.stdout, /Reuse checks: the answer was NOT recorded/);
+  assert.match(out.stdout, /Reuse checks: the answer was not recorded/);
   assert.ok(!out.stdout.includes(ON), "no success line");
   if (typeof process.getuid === "function" && process.getuid() === 0) return t.skip("root can write a read-only file");
   /* A recorded yes that can be read but not rewritten: the no is not recorded, and the yes stands. */
@@ -298,7 +298,7 @@ test("an answer that cannot be recorded says so, and exits 1", (t) => {
   chmodSync(s.answers, 0o444);
   const no = install(s, repo, "--checks", "no");
   assert.equal(no.status, 1, no.stdout + no.stderr);
-  assert.match(no.stdout, /Reuse checks: the answer was NOT recorded/);
+  assert.match(no.stdout, /Reuse checks: the answer was not recorded/);
   assert.equal(readAnswers(s)[path.join(repo, ".git")]?.checksHook, true, "the yes is still the recorded answer");
 });
 
@@ -308,7 +308,7 @@ test("a project that is not a git checkout needs no ignore rule: the entries go 
   const out = install(s, repo, "--checks", "yes");
   assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.ok(out.stdout.includes(ON));
-  assert.deepEqual(both(readLocal(repo)), [1, 1]);
+  assert.deepEqual(both(readLocal(repo)), [2, 1]);
   assert.equal(readAnswers(s)[repo]?.checksHook, true, JSON.stringify(readAnswers(s)));
 });
 
@@ -326,30 +326,28 @@ test("a new linked worktree gets the entries on a run with no flag, because the 
   const out = install(s, wt);
   assert.equal(out.status, 0, out.stdout + out.stderr);
   assert.ok(out.stdout.split("\n").includes(ON), out.stdout);
-  assert.deepEqual(both(readLocal(wt)), [1, 1], "the worktree has the entries now");
+  assert.deepEqual(both(readLocal(wt)), [2, 1], "the worktree has the entries now");
   assert.deepEqual(Object.keys(readAnswers(s)), [path.join(main, ".git")], "one answer for the repo, not one per worktree");
 });
 
-test("in an unignored linked worktree the main repository's exclude list is never written: no .claude, the line to add, exit 1", () => {
+test("in an unignored linked worktree the rule goes in the repository's exclude list, beside the canvas's lines, and the entries go in", () => {
   const s = scratch();
   const main = project(s, "main");
   git(main, s.answers, "add", "package.json");
   git(main, s.answers, "commit", "-q", "-m", "init");
   const wt = path.join(s.dir, "wt");
   git(main, s.answers, "worktree", "add", "-q", wt, "-b", "feature");
-  const before = readFileSync(excludeFile(main), "utf8");
-  const out = install(s, wt, "--checks", "yes");
-  assert.equal(out.status, 1, out.stdout + out.stderr);
+  const out = install(s, wt);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   const after = readFileSync(excludeFile(main), "utf8");
-  assert.ok(after.startsWith(before) && !after.includes("settings.local.json"), "no rule for the settings file in the main repository's exclude list");
-  assert.ok(after.includes("/design-canvas/\n"), "the canvas itself is kept local through the repository's list, which is the only one git reads");
-  assert.match(out.stdout, /is outside .*, so nothing was written to it\. Add the line \.claude\/settings\.local\.json to that file, or to your global git ignore/);
-  assert.ok(out.stdout.includes(path.join(main, ".git", "info", "exclude")), "it says where");
-  assert.ok(!existsSync(path.join(wt, ".claude")), "no .claude folder in the worktree");
+  assert.ok(after.split("\n").includes(".claude/settings.local.json"), "the rule is in the repository's list, the one git reads");
+  assert.ok(after.includes("/design-canvas/\n"), "beside the canvas's own lines");
+  assert.equal(ignored(s, wt), true);
+  assert.deepEqual(both(readLocal(wt)), [2, 1]);
   assert.equal(git(wt, s.answers, "status", "--short").includes(".claude"), false, "git sees no new .claude path");
 });
 
-test("a project in a subfolder of a repo gets the line printed, not the repository's exclude list written", () => {
+test("a project in a subfolder of a repo gets the rule anchored at its folder in the repository's exclude list", () => {
   const s = scratch();
   const top = path.join(s.dir, "top");
   mkdirSync(top, { recursive: true });
@@ -357,14 +355,13 @@ test("a project in a subfolder of a repo gets the line printed, not the reposito
   const sub = path.join(top, "web");
   mkdirSync(sub, { recursive: true });
   writeFileSync(path.join(sub, "package.json"), "{}\n");
-  const before = readFileSync(excludeFile(top), "utf8");
   const out = install(s, sub, "--checks", "yes");
-  assert.equal(out.status, 1, out.stdout + out.stderr);
+  assert.equal(out.status, 0, out.stdout + out.stderr);
   const after = readFileSync(excludeFile(top), "utf8");
-  assert.ok(after.startsWith(before) && !after.includes("settings.local.json"), "no rule for the settings file");
+  assert.ok(after.split("\n").includes("web/.claude/settings.local.json"), after);
   assert.ok(after.includes("/web/design-canvas/\n"), "the canvas lines are anchored at the project's folder");
-  assert.match(out.stdout, /Add the line web\/\.claude\/settings\.local\.json to that file/);
-  assert.ok(!existsSync(path.join(sub, ".claude")), "no .claude folder was created");
+  assert.equal(ignored(s, sub), true);
+  assert.deepEqual(both(readLocal(sub)), [2, 1]);
 });
 
 /* ------------------------------------------------------------------ check-install */

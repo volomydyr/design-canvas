@@ -65,7 +65,8 @@ export const CANVAS: CanvasDeclaration = {
   ],
   /**
    * OPTIONAL: the Exploration tab, one question and the options that answer it, opened beside today's screen (`original`).
-   * Delete the key and the tab is gone. The next round keeps only the liked options; the rest are deleted.
+   * Delete the key and the tab is gone. In a panel with a like, the next round keeps only the liked options. A panel with no
+   * like is never deleted: ask the reviewer.
    */
   // explorations: [
   //   {

@@ -10,6 +10,8 @@
   classes and shipped prebuilt as `design-canvas/canvas.css`, which the canvas pages import in every project.
 - **Playwright**, for the capture and the oracle. `playwright` must load from `design-canvas/`: a pnpm project with only
   `@playwright/test` cannot, and the installer and `check-install.mjs` print the one command that adds it.
+- **esbuild**, which reads `project/flows.ts` from source for every tool. It must load from `design-canvas/` too, and
+  `check-install.mjs` prints the one command that adds it.
 - **The canvas is served from the app's own origin.** The annotated PNG is drawn from the shot in a `<canvas>`, and a
   cross-origin image would taint it.
 
@@ -29,13 +31,15 @@ repository's exclude list (never `.gitignore`), so the developers' repository ne
 project whose canvas folder is already tracked keeps it shared; `install-canvas.mjs --share` opts a repository in when the
 user asks for the canvas to be shared through git.
 
-Every line the canvas adds to a tracked app file is a **local line**: an added line, never an edited one, ending in a
-`design-canvas:local` comment or inside a `design-canvas:local begin` ... `end` block (a comment line each), in the file's
-own comment syntax. The overlay (`tool/overlay.mjs`, installed into the repository's git folder) keeps local lines out of
-every commit and puts them back after a pull, merge, rebase or switch; a line that no longer fits is reported in one line and
-kept aside. A pushed commit that imports the canvas, calls a pin helper or carries a marker is refused, naming the file;
-only lines the push adds count, so a marked line the remote already holds (a merge brought it) is named in one line and
-passes.
+Every line the canvas adds to an app file is a **local line**: an added line, never an edited one, ending in a
+`design-canvas:local` comment (only the comment's closing may follow the marker) or inside a `design-canvas:local begin` ...
+`end` block (a comment line each), in the file's own comment syntax. A line that only mentions the marker is ordinary text.
+The overlay (`tool/overlay.mjs`, installed into the repository's git folder) keeps local lines out of every commit and puts
+them back after a pull, merge, rebase, switch or stash; a line that no longer fits is reported in one line and kept aside
+until it is back. A pushed commit that imports the canvas, calls a pin helper or carries either token anywhere is refused,
+naming the file and line; only lines the push adds count, so a marked line the branch being updated already holds (a merge
+brought it) is named in one line and passes. In a project with its own hooks folder, only the agent's pushes are checked
+(traps.md, 53).
 
 Written by the installer, only when they are not there yet (in `src/app` when the project keeps its App Router there):
 
@@ -47,8 +51,9 @@ Written by the installer, only when they are not there yet (in `src/app` when th
    `core/` knows which project it is looking at.
 6. The block for agents in `CLAUDE.md` or `AGENTS.md` (from `stubs/agents-block.md`), a local block replaced on every
    install. A project with neither file gets the lines printed.
-7. Three hook entries in `.claude/settings.local.json` (PreToolUse, PostToolUse and Stop, all running
-   `design-canvas/hook.mjs`), merged in beside whatever is there. The file must be ignored by git; the installer checks.
+7. Four hook entries in `.claude/settings.local.json` (two PreToolUse, one PostToolUse and one Stop, all running
+   `design-canvas/hook.mjs`), merged in beside whatever is there. The file must be ignored by git: the installer checks,
+   and adds it to the repository's exclude list when needed.
 8. Local lines in the root layout (`<CanvasStatePin />` and its import), the next config
    (`distDir: process.env.CANVAS_BUILD_DIR || ".next"`) and `tsconfig.json` (`".next-canvas/types/**/*.ts"` in
    `include`). A file with no place for a line of its own (a body tag holding its children on one line, a wrapped config,
@@ -69,8 +74,8 @@ Added by the agent, as local lines, as the installer's printout lists them:
 The canvas pages import the prebuilt `design-canvas/canvas.css`, so no Tailwind config names the canvas folder.
 
 Hand-off notes for the developers are local lines too: `// design-canvas:handoff <what>, because <why>` on the exact spot.
-At each push the pre-push hook lists them in one block (file:line, what, why), removes them from the code, and keeps the list
-until an agent has shown it.
+At each push that sends commits (not a dry run) the pre-push hook lists them in one block (file:line, what, why), removes them
+from the code, and keeps the list until an agent has shown it.
 
 Write every seam into the README's project half, below the marker.
 
@@ -104,6 +109,7 @@ every caption. Nothing else about the canvas is configurable, and a second hook 
 ## Deleting the whole thing
 
 Run `node design-canvas/overlay.mjs uninstall`, delete every local line (`git grep -n design-canvas:local`), then
-`design-canvas/`, the route stubs and `.next-canvas/`, and the installer's lines in the repository's exclude list. Nothing
+`design-canvas/`, the route stubs and `.next-canvas/`, the installer's lines in the repository's exclude list, and the four
+`design-canvas/hook.mjs` entries in `.claude/settings.local.json`. Nothing
 tracked knows the tool exists. A shared canvas from an older install also has committed seams marked `DELETE WITH: the
 design-canvas/ folder`; never untrack its folder while committed app code imports it (trap 35).

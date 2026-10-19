@@ -27,10 +27,12 @@ the numbers the code cites, with the cause and the fix in a few lines; a project
 46. A frame that waits ten seconds for a request that never ends
 48. A menu claim that fails over a dialog and passes everywhere else
 50. A file shows as modified, and its diff is empty
+53. A push from a terminal is not checked in a project with its own hooks folder
+54. An upgrade over an older install leaves lines a commit would carry
 
 ---
 
-## 1. Every styling change is a no-op
+## 1. Styling that does nothing: a canvas page without the prebuilt stylesheet
 
 **Symptom.** The canvas looks like a wireframe. Panels are invisible. Raising a color value changes nothing. Some classes
 work, which makes it read as a styling problem rather than a build one.
@@ -126,7 +128,7 @@ preflight fail a collision.
 
 ## 16. Frames that never settle: a JS-driven animation the freeze cannot see
 
-**Symptom.** `never captured the same picture twice: still moving`, on every screen that holds one particular surface, while
+**Symptom.** `never captured the same picture twice, so it is still moving`, on every screen that holds one particular surface, while
 every claim passes.
 
 **Cause.** The freeze pauses CSS animations and waits for `document.getAnimations()` to go quiet. Neither reaches a library
@@ -310,11 +312,35 @@ it. If a claim about a portaled surface still fails, check whether that surface 
 **Symptom.** `git status` lists an app file, `git diff` shows nothing, and a pull or a rebase refuses with "Your local
 changes would be overwritten" or "You have unstaged changes".
 
-**Why.** Only the file's local lines changed, by hand and with no agent hook run since. git's quick check sees a new size and
-calls the file changed without reading it through the overlay's filter.
+**Why.** Only the file's local lines changed, outside an agent (an editor, by hand), and no agent hook has run since. git's
+quick check sees a new size and calls the file changed without reading it through the overlay's filter. An agent's own edit
+does not cause it: the hook re-stages the file right after the edit.
 
 **Fix.** `node design-canvas/overlay.mjs sync`, which the canvas's Claude Code hook runs before every git command. Nothing is
 lost either way: the lines are in the file, and the commit never carries them.
+
+## 53. A push from a terminal is not checked in a project with its own hooks folder
+
+**Symptom.** A project that runs its git hooks from its own folder (`core.hooksPath`, as husky sets it, or a hooks folder that
+is a link into the work tree). The agent's push of a commit carrying canvas code is refused; the same push from a terminal
+or a git client goes through.
+
+**Why.** The overlay never writes into a folder the project owns, often tracked, so no pre-push hook exists there. The
+canvas's Claude Code hook is the only push guard, and it sees only the agent's commands.
+
+**Fix.** Push through the agent, or run `node design-canvas/check-install.mjs` first: it names every canvas line in the
+commits not pushed yet. check-install fails when the hook entries that guard the push are missing.
+
+## 54. An upgrade over an older install leaves lines a commit would carry
+
+**Symptom.** After installing over an older canvas, check-install names lines in the layout, the next config, tsconfig, an
+ignore file, or a line the team had that is now changed.
+
+**Why.** Older installs wrote canvas lines without the marker, or left agents to edit the team's lines by hand. The installer
+marks the older lines that are lines of their own and absent from the committed version, and names the rest.
+
+**Fix.** For each named line: put the team's version back and add the canvas's part as a marked line of its own, or remove
+it. A Playwright line in package.json can go: a local canvas installs Playwright inside `design-canvas/`.
 
 ---
 
@@ -419,6 +445,27 @@ upstream. Only lines local to this working copy are overlay lines. An identical 
 committed too, and the pre-push scan names it in one line without blocking, because every remote-tracking ref already holds
 it (a merge's first parent alone does not, which once stopped every push of a merge that brought a teammate's marked line). A hand-off line is collected and shown only when it is proven to be this
 copy's own: absent from HEAD and from a merge or rebase in progress, and never added at that path by any commit a ref reaches.
+
+**55. The overlay's edge cases.** A path with glob characters (`app/[id]/page.tsx`) is escaped in `info/attributes`, so the
+filter applies. A begin with no end hands git the whole file, so the commit is stopped on every path. Hand-off lines are saved
+before any file is rewritten, so a collection stopped half way loses none, and a dry run or a push that sends nothing takes
+none. A line kept aside keeps its neighbors and stays kept aside until it is back; a stash popped puts it back by itself, and
+`overlay.mjs forget <file>` drops it. The push scan reads every pushed commit in one git process, unquotes paths git quotes,
+ignores diff prefix settings, judges a line against the branch being updated (a leaked branch elsewhere on the remote
+whitelists nothing), and covers every commit no remote holds when the remote's commit is unknown (a force push over unfetched
+commits). A project hook written for sh or bash still runs with its own path as `$0`. Every path reads a line through one
+classifier, so a marker written slightly wrong (words after it, inside a string) is ordinary text that git keeps and the push
+scan refuses.
+
+**56. A base that blamed the designer for the developers' removals.** The base followed a pull only when the agent ran it.
+It now follows the developers' commits however they arrived: after any git command and before a canvas command that runs the
+parity check, a base moves when commits a fetch brought, and the base lacks, changed its files. A name that is not plain (letters,
+digits, dash, underscore) never reaches a command the hook prints. A removal entry, or simple mode over real logic, counts only
+when `parity.mjs` recorded it (`--remove`, `--mode simple`, with the reviewer's words): each carries a digest keyed by a secret
+kept outside the repository, so the check refuses a hand-written or changed one, by any route. The hook refuses such an edit or
+shell command early, as a warning; the check is the control. Against the local agent, which runs as the same user and can read
+that secret, this is a guard against drift, not a boundary: the report names every entry it did not record. Against outside
+input (an entry in someone else's commit) it holds: such an entry is refused and its text shown quoted on one line.
 
 **52. Open on a frame not captured yet lands on the default state.** The Open link took the pinned address from the capture
 manifest and fell back to the bare route. It now falls back to the address the capture would use (`openAddress` in

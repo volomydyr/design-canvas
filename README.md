@@ -17,7 +17,8 @@ see it, comment on it, and change it with an agent.
   fixes the code, retakes the picture, and you approve or send it back.
 - **Explorations side by side.** While a design question is open, a separate tab shows several options next to each other,
   numbered, with like and dislike. What you like survives and the next round builds on it.
-- **A page for the team.** Publish the options as one page your teammates can open and comment on, without running the app.
+- **A page for the team.** Publish the options as one claude.ai page your teammates can open and comment on, without
+  running the app.
 
 Every frame is a picture of a real page of your app, with an Open button that takes you to that page in the same state.
 
@@ -30,18 +31,24 @@ Every frame is a picture of a real page of your app, with an Open button that ta
    /plugin install design-canvas@design-canvas
    ```
 
-2. **Ask it to put your product on a canvas**, in your project: "put every screen and state of the trip planner on a canvas".
+2. **Run your app locally**, the way you always do (for example `npm run dev`). The canvas takes its pictures from the
+   running app, and the agent writes down its address once.
+3. **Ask it to put your product on a canvas**, in your project: "put every screen and state of the trip planner on a canvas".
    It reads the code, lists the screens and states it found, and asks you to confirm before it builds anything.
-3. **Look, comment and build on top of it.** Open the address it gives you, comment on any screen, and ask for options when
+4. **Log in once, if your app has a sign-in.** The agent gives you one command that opens a browser window. Sign in there
+   yourself and close it: the canvas reuses that session. The agent never signs in for you and never reads the saved session.
+5. **Look, comment and build on top of it.** Open the address it gives you, comment on any screen, and ask for options when
    you want to try a different design.
 
 ## Requirements
 
 - A Next.js App Router project with React 18 or later.
-- Tailwind, or nothing: without Tailwind the canvas uses its own prebuilt stylesheet.
-- Playwright, which takes the pictures. The installer tells you the command if it is missing.
+- No styling setup: the canvas brings its own stylesheet, with or without Tailwind.
+- Playwright, which takes the pictures, and esbuild, which reads the screen list. If either is missing, the install check
+  prints the command that adds it.
 
-Another framework (Vite, Remix, Astro) works if two small API routes are rewritten for its server.
+Another framework (Vite, Remix, Astro) can work, but the canvas's two API routes and its pages have to be rewritten for
+that server, roughly 200 lines of work.
 
 ## How it works
 
@@ -54,8 +61,8 @@ Another framework (Vite, Remix, Astro) works if two small API routes are rewritt
 - **Pictures, not live pages.** A canvas of dozens of live pages cannot pan or zoom smoothly, so each screen is captured
   with Playwright once it has fully loaded and stopped moving, and checked against the words it should show. Only screens
   whose code changed are captured again.
-- **The canvas and its comments stay on your machine.** Your team sees and comments on it through the team page. If you
-  want the canvas shared through git instead, say so, and the agent switches the project to shared.
+- **The canvas and its comments stay on your machine.** Your team sees and comments on it through the team page on
+  claude.ai. If you want the canvas shared through git instead, say so, and the agent switches the project to shared.
 - **Notes for your developers.** When the agent leaves something a developer has to finish, it marks the exact line. At the
   next push you get one list in chat (what, where, why), and the marks are gone from the code.
 
@@ -85,3 +92,7 @@ references/       the detail SKILL.md points to
 stubs/            the files the installer writes into a project
 scripts/          the installer, the install check and their helpers
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

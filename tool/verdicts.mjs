@@ -17,7 +17,10 @@
  *   node design-canvas/verdicts.mjs list   --canvas <slug>
  *   node design-canvas/verdicts.mjs check  --canvas <slug>
  *   node design-canvas/verdicts.mjs record --canvas <slug> --screen <id> --value like|dislike \
- *                                          --said "<the reviewer's exact words>"
+ *                                          --said-file <a file holding the reviewer's exact words>
+ *
+ * The words go through a file (`-` reads stdin), never on the command line, where their quotes or `$(` would be run by the
+ * shell. `--said "<words>"` is still read, for older notes.
  *
  * `check` exits 1 when any option on the exploration has no verdict, and names them. Run it before
  * generating a round; a round built on an unknown verdict is a guess presented as a decision.
@@ -47,13 +50,13 @@ const argOf = (name) => {
 
 const canvas = argOf("canvas") ?? "main";
 if (!/^[a-z0-9][a-z0-9-]*$/.test(canvas)) {
-  console.error(`refusing --canvas "${canvas}" — a canvas slug is lowercase letters, digits and dashes only.`);
+  console.error(`refusing --canvas "${canvas}": a canvas slug is lowercase letters, digits and dashes only`);
   process.exit(1);
 }
 
 const file = path.join(HERE, "comments", `${canvas}.json`);
 if (!existsSync(file)) {
-  console.error(`no review file for canvas "${canvas}" — looked for:`);
+  console.error(`no review file for canvas "${canvas}", looked for:`);
   console.error(`  ${relative(file)}`);
   console.error("nothing has been reviewed here yet, so there are no verdicts to read.");
   process.exit(1);
@@ -86,7 +89,7 @@ if (mode === "list" || mode === "check") {
   const missing = ids.filter((id) => !verdictOf(id));
   for (const id of ids) {
     const verdict = verdictOf(id);
-    const said = verdict?.note ? ` — ${verdict.note.split("\n")[0].slice(0, 80)}` : "";
+    const said = verdict?.note ? `: ${verdict.note.split("\n")[0].slice(0, 80)}` : "";
     console.log(`  ${verdict ? verdict.kind.padEnd(7) : "none".padEnd(7)} ${id}${said}`);
   }
   if (!argOf("screens")) {
@@ -99,7 +102,7 @@ if (mode === "list" || mode === "check") {
     console.error(
       `\n${missing.length} option(s) have no recorded verdict: ${missing.join(", ")}\n` +
         "A round generated now would be built on an assumption. If the reviewer decided in conversation, record it:\n" +
-        `  node design-canvas/verdicts.mjs record --canvas ${canvas} --screen <id> --value like|dislike --said "<the reviewer's words>"`,
+        `  node design-canvas/verdicts.mjs record --canvas ${canvas} --screen <id> --value like|dislike --said-file <a file holding the reviewer's exact words>`,
     );
     process.exit(1);
   }
@@ -109,14 +112,22 @@ if (mode === "list" || mode === "check") {
 if (mode === "record") {
   const screenId = argOf("screen");
   const value = argOf("value");
-  const said = argOf("said");
+  let said = argOf("said");
+  if (argOf("said-file") !== undefined) {
+    try {
+      said = readFileSync(argOf("said-file") === "-" ? 0 : argOf("said-file"), "utf8").trim();
+    } catch (error) {
+      console.error(`--said-file ${argOf("said-file")} cannot be read (${error.code ?? error.message})`);
+      process.exit(1);
+    }
+  }
   if (!screenId || (value !== "like" && value !== "dislike")) {
-    console.error('record needs --screen <id> and --value like|dislike, plus --said "<the reviewer\'s words>".');
+    console.error("record needs --screen <id> and --value like|dislike, plus --said-file <a file holding the reviewer's words>.");
     process.exit(1);
   }
   if (!said) {
     console.error(
-      "record needs --said: a verdict recorded without the words it came from is a paraphrase, and this\n" +
+      "record needs the reviewer's words (--said-file): a verdict recorded without the words it came from is a paraphrase, and this\n" +
         "tool exists because a paraphrased decision already cost a round.",
     );
     process.exit(1);

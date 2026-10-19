@@ -269,9 +269,10 @@ export async function startFixture({ port = 0, host } = {}) {
       return;
     }
     if (url.pathname === "/api/design-canvas/shots") {
+      /* As the real route answers: a canvas it has no declaration for is a 400 naming it. */
       const body = state.served.get(url.searchParams.get("canvas"));
-      res.writeHead(body ? 200 : 404, { "content-type": "application/json" });
-      res.end(body ?? "{}");
+      res.writeHead(body ? 200 : 400, { "content-type": "application/json" });
+      res.end(body ?? JSON.stringify({ error: `No canvas called "${url.searchParams.get("canvas")}".` }));
       return;
     }
     if (url.pathname === "/__seen") {

@@ -63,7 +63,7 @@ import { requireAppAnswers } from "./app-reachable.mjs";
 /* A frame that left the declaration with comments still pinned to it, and the steps a screen presses before its picture:
    both are read by the capture too, through these two modules, so the tools cannot disagree about them. */
 import { declaredFrames, planPins, refusalFailures, remedyLine } from "./comment-integrity.mjs";
-import { undrainedIn } from "./reminders.mjs";
+import { undrainedByCause } from "./reminders.mjs";
 /* Which frames the live Open pass visits: the ones captured since their last clean visit, not every route of the app. */
 import { chooseLive, describeLive, markProven, readUnproven } from "./live-pass.mjs";
 /* What the page's data does on a frame (a held, failed or answered request, an aborted save): put on the oracle's Open pass exactly as
@@ -292,7 +292,7 @@ if (screens.length > FRAME_LIMIT || kindsInUse.length > SECTION_LIMIT) {
       (loose.length > 1
         ? ` Route families that no arrow crosses: ${loose
             .map(([family, count]) => `/${family} (${count})`)
-            .join(", ")}. A second canvas for one of them costs nothing but a slug — see SKILL.md on splitting.`
+            .join(", ")}. A second canvas for one of them costs nothing but a slug: see SKILL.md on splitting.`
         : ` Every route family here is joined by an arrow, so there is no clean seam to split on.`),
   );
 }
@@ -386,13 +386,22 @@ const comments = await fetch(commentsApi)
   .then((response) => (response.ok ? response.json() : { comments: [] }))
   .catch(() => ({ comments: [] }));
 /* Verdicts are left out (`undrainedIn`): draining one deletes the reviewer's like or dislike. */
-const undrained = undrainedIn(comments.comments);
+/* By what happened: a note whose screen was photographed again after it was written is this work's to drain; a stale mark with
+   no such picture was left from before, and draining it unworked would hand the reviewer back words nobody acted on. */
+const { recaptured: undrained, inherited } = undrainedByCause(comments.comments, manifest.shots);
+const idsArg = (ids) => ids.filter((id) => /^c\d+$/.test(id)).join(",") || "<their ids>";
 if (undrained.length > 0)
   failures.push(
-    `${undrained.length} comment(s) sit on a screen you recaptured and were never marked consumed ` +
+    `${undrained.length} comment(s) sit on a screen photographed again since they were written and were never marked consumed ` +
       `(${undrained.join(", ")}). ` +
       `The reviewer sees them as unanswered and gets no review bar. ` +
-      `Mark the ones you acted on: node design-canvas/drain.mjs --canvas ${canvasSlug} --ids ${undrained.join(",")}`,
+      `Mark the ones you acted on: node design-canvas/drain.mjs --canvas ${canvasSlug} --ids ${idsArg(undrained)}; work any you did not first`,
+  );
+if (inherited.length > 0)
+  notes.push(
+    `${inherited.length} comment(s) carry an out-of-date mark although their screen has not been photographed since they were written ` +
+      `(${inherited.join(", ")}): the mark was left from before, not by this work. Work them, then drain them: ` +
+      `node design-canvas/drain.mjs --canvas ${canvasSlug} --ids ${idsArg(inherited)}`,
   );
 
 /**
@@ -451,7 +460,7 @@ for (const screen of screens) {
     /* And nothing can be measured on it either: an origin needs a live page to resolve against. */
     if ((screen.origins ?? []).length > 0)
       failures.push(
-        `${screen.id}: an explanation frame cannot own an interaction origin — there is no page to measure "${screen.origins[0].origin}" on`,
+        `${screen.id}: an explanation frame cannot own an interaction origin: there is no page to measure "${screen.origins[0].origin}" on`,
       );
     continue;
   }
@@ -472,7 +481,7 @@ for (const screen of screens) {
     );
     if (!measured)
       failures.push(
-        `${screen.id}: the edge to ${wanted.to} declares origin "${wanted.origin}" and the capture never measured it — recapture this screen`,
+        `${screen.id}: the edge to ${wanted.to} declares origin "${wanted.origin}" and the capture never measured it, so recapture this screen`,
       );
     else if (
       ![measured.x, measured.y, measured.w, measured.h].every(Number.isFinite) ||
@@ -490,7 +499,7 @@ for (const screen of screens) {
       )
     )
       failures.push(
-        `${screen.id}: the manifest holds an origin for the edge to ${measured.to} ("${measured.origin}") that the declaration no longer declares — recapture this screen`,
+        `${screen.id}: the manifest holds an origin for the edge to ${measured.to} ("${measured.origin}") that the declaration no longer declares, so recapture this screen`,
       );
   }
   if (shot.url !== screen.url)
@@ -519,7 +528,7 @@ for (const screen of screens) {
     shot.images.empty === 0
   )
     failures.push(
-      `${screen.id}: declared broken images and every image loaded — the bug healed, update the declaration`,
+      `${screen.id}: declared broken images and every image loaded: the bug healed, so update the declaration`,
     );
   if (!existsSync(path.join(HERE, "shots", canvasSlug, shot.file)))
     failures.push(
@@ -560,7 +569,7 @@ if (outOfDate.length > 0)
 if (unstamped.length > 0)
   notes.push(
     `${unstamped.length} shot(s) have no stamp, so nothing can tell whether they are out of date: ` +
-      `${unstamped.join(", ")} — one full capture fixes it`,
+      `${unstamped.join(", ")}. One full capture fixes it`,
   );
 failures.push(...variantPictureProblems(screens, manifest.shots));
 const orphans = manifest.shots.filter(
@@ -1035,13 +1044,13 @@ if (measuredOrigins.length > 0) {
   const toggles = await page.locator("[data-canvas-origins-toggle]").count();
   if (toggles !== 1) {
     failures.push(
-      `the canvas holds ${measuredOrigins.length} measured origin(s) and ${toggles} origin toggle(s) — the mode is unreachable`,
+      `the canvas holds ${measuredOrigins.length} measured origin(s) and ${toggles} origin toggle(s), so the mode is unreachable`,
     );
   } else {
     const before = await page.locator("[data-canvas-origin]").count();
     if (before > 0)
       failures.push(
-        `${before} origin ring(s) are drawn while the mode is off — it must rest off`,
+        `${before} origin ring(s) are drawn while the mode is off, and it must rest off`,
       );
     await page.locator("[data-canvas-origins-toggle]").click();
     await page.waitForTimeout(200);
@@ -1453,10 +1462,9 @@ for (const mode of views) {
    *
    * Grouped screens and flows exist to put like beside like, so a lone frame there means a `kind` nobody
    * else shares or a flow with one step, and both are declaration mistakes. An exploration is the opposite:
-   * it NARROWS. Five directions become three variants become one refined design, and that last round is a
-   * panel of one by design: the best options are chosen and improved, round after round, until one specific
-   * design remains for each type of screen. This check failed exactly that round, which would have
-   * pushed an agent to invent a second option nobody asked for.
+   * it usually narrows (five, then three, then one by default), and it may end in a panel of one, the option
+   * the reviewer's verdicts kept. This check once failed exactly that round, which would have pushed an agent
+   * to invent a second option nobody asked for.
    */
   if (mode !== "explore")
     /* Counted on REAL frames: a flow of one screen and one explanation panel is still a flow of one. */
@@ -1487,7 +1495,7 @@ if (exploreScreens.length > 0) {
   const first = page.locator("[data-canvas-today]").first();
   const count = await page.locator("[data-canvas-today]").count();
   if (count === 0)
-    notes.push("explore: no frame carries the switch to today's screen — every option declares redesigns: null");
+    notes.push("explore: no frame carries the switch to today's screen, because every option declares redesigns: null");
   else {
     const figure = first.locator("xpath=ancestor::figure[1]");
     const optionId = await figure.getAttribute("data-canvas-screen");
@@ -1554,7 +1562,7 @@ stage = "open destinations";
         try {
           await runSteps(live, screen.steps, { dismissals });
         } catch (error) {
-          return [`${screen.id}: its steps do not run on the served app — ${error.message}`];
+          return [`${screen.id}: its steps do not run on the served app: ${error.message}`];
         }
         await live.waitForTimeout(400);
         await dismissNow(live);
@@ -1603,7 +1611,7 @@ stage = "open destinations";
       for (const claim of wanted)
         if (!text.includes(claim))
           problems.push(
-            `${screen.id}: its Open destination does not show "${claim}" on the served app — the button does not land on the picture`,
+            `${screen.id}: its Open destination does not show "${claim}" on the served app, so the button does not land on the picture`,
           );
       /* The same proof the capture makes of a frame's own rules: a page that never asked for the operation a rule holds, fails or
          answers is a stale rule, and its picture would be of live data under a label that says otherwise. */
@@ -1628,7 +1636,7 @@ stage = "open destinations";
       return problems;
     } catch (error) {
       return [
-        `${screen.id}: its Open destination did not load — ${error.message}`,
+        `${screen.id}: its Open destination did not load: ${error.message}`,
       ];
     } finally {
       /* A held request is aborted before its page closes, or the browser lets it through (see `dispose` in network.mjs). */

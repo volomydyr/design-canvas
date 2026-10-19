@@ -314,7 +314,7 @@ function placeNodes(
   );
 
   /* Columns are as wide as their widest frame and rows as tall as their tallest, so a phone frame among
-     desktop ones neither overlaps its neighbour nor leaves a hole. */
+     desktop ones neither overlaps its neighbor nor leaves a hole. */
   const columnWidth = new Map<number, number>();
   const rowHeight = new Map<number, number>();
   for (const screen of flow.screens) {
@@ -813,7 +813,7 @@ export function layoutExplorations(
       );
     if (!exploration.original)
       problems.push(
-        `exploration ${exploration.id}: no original — every panel opens with today's design as its first frame`,
+        `exploration ${exploration.id}: no original, and every panel opens with today's design as its first frame`,
       );
     /**
      * `redesigns` points an option's switch at the dialog or tab it redesigns rather than the whole page; like
@@ -825,7 +825,7 @@ export function layoutExplorations(
     for (const screen of exploration.screens) {
       if (screen.redesigns === undefined)
         problems.push(
-          `exploration ${exploration.id}: "${screen.id}" does not say what it redesigns — name today's screen of the SAME state, or null when nothing like it exists today`,
+          `exploration ${exploration.id}: "${screen.id}" does not say what it redesigns: name today's screen of the same state, or null when nothing like it exists today`,
         );
       else if (screen.redesigns !== null && !permanentIds.has(screen.redesigns))
         problems.push(

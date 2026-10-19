@@ -80,7 +80,7 @@ The capture refuses pictures that look broken. A few real states look broken on 
 
 - `brokenImages: true`: images here never load because the app is broken there, and the broken image is the finding. A
   flagged screen where every image loads fails, because the flag is out of date.
-- `sparse: true`: the page is genuinely under the blank-page floor (one grey line on white). Its claims still have to
+- `sparse: true`: the page is genuinely under the blank-page floor (one gray line on white). Its claims still have to
   pass.
 - `animated: true`: the surface never settles by design (a pulsing skeleton, rows whose video plays), so the
   two-identical-shots proof is impossible. One shot is accepted; every other check still applies.
@@ -400,16 +400,30 @@ explorations: [{
   every option; otherwise each option's switch shows today's same state. The oracle fails a missing or unknown `original`.
 - **`mode` is normally left out.** The preflight reads the files `original` reaches: data calls or mutations, server
   actions, route handlers, stores or permission checks put the exploration in real-code mode, none of them in simple mode,
-  and one `mode:` line says which and why. Set `mode: "real-code"` or `mode: "simple"` only when the reviewer says otherwise.
+  and one `mode:` line says which and why. Set `mode: "real-code"` only when the reviewer says so. Simple mode over files
+  that hold real logic counts only on the reviewer's words, recorded by `parity.mjs --canvas <slug> --exploration <id> --mode
+  simple --said-file <path>`; a `mode: "simple"` written in the declaration over such files is ignored, and the mode line says
+  so. An `original` with no `source`, or one that is no screen of the canvas, is a preflight problem until it is fixed or
+  simple mode is recorded that way.
   In real-code mode every option lists its file in `source`, draws over the original's hooks, handlers and data (an option
   file with data calls of its own is refused), and the chosen one is folded into the original's files. The parity check
   (`parity.mjs`) then compares those files with the commit the exploration was first captured at and fails the round on
-  anything lost. A piece of logic that moved to another file gets an entry in `project/parity-exceptions.json`, which must
-  name where it is now: `{ "exploration", "file", "kind", "unit", "movedTo": "<file>:<line>", "why" }`, with `unit` as the
-  check printed it. An entry without `movedTo`, or one whose line does not hold the unit, is refused. A behavior the
-  reviewer asked to remove is a removal entry, `{ "exploration", "file", "kind", "removed", "said" }`, written only by
-  `parity.mjs --canvas <slug> --exploration <id> --remove <unit or file:line> --said "<the reviewer's exact words>"`; it
-  excuses exactly that unit, one without words is refused, and an agent never writes one on its own.
+  any lost behavior: a condition or gate, a handler (one that only forwards, `() => onDelete()`, is that function), a door,
+  a field and its literal attributes (`type`, `required`, `action`, `method`, `target`), a translation key, a rendered
+  component whose own file does something, a prop given to such a component or named for behavior (`value`, `disabled`,
+  `open`). Layout is free: element types, nesting, a table that becomes cards, a list drawn another way, a renamed local,
+  and props given to components that only draw pass. Code left in a declaration nothing uses counts as removed. A piece of
+  logic that moved to another file gets an entry in `project/parity-exceptions.json`, which must name where it is now:
+  `{ "exploration", "file", "kind", "unit", "movedTo": "<file>:<line>", "why" }`, with `unit` as the check printed it. An
+  entry without `movedTo`, one whose file today's screen does not reach, or one whose line does not hold the unit, is
+  refused. A behavior the reviewer asked to remove is a removal entry, `{ "exploration", "file", "kind", "removed", "said" }`,
+  written only by `parity.mjs --canvas <slug> --exploration <id> --remove <file:line[#n]> --said-file <path>`, the file
+  holding the reviewer's exact words as they said them in conversation (`--said-from <comment id>` takes the words of one of
+  their canvas comments instead); one with no words is refused, and an agent never writes one on its own. Words never go
+  inside the command line, where their quotes or `$(` would be run by the shell. Every removal and simple-mode entry carries
+  `sig`, a digest of its exploration, unit and words keyed by a secret this machine keeps beside its answers file (outside
+  every repository): an entry written or changed by hand, by any route, is refused by the check, naming the command. On another
+  machine the entries need recording again there.
 - **`surface` names the screen, not the exercise**: "The settings page while a sync is running", never "Option set A".
   The question goes in `title`.
 - **Options are numbered from their order in `screens`**, because a reviewer says "number three" out loud. Order them from

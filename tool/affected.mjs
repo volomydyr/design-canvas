@@ -278,7 +278,9 @@ export function linesForComments(comments, { canvas, graph, system = {}, all = f
     const key = `${canvas}/${comment.screenId}`;
     if (!graph.frames.some((frame) => frame.key === key)) continue;
     const result = alsoAffected({ target: key, frames: graph.frames, closures: graph.closures, shell: graph.shell });
-    const more = `node design-canvas/affected.mjs --canvas ${canvas} ${screen ? `--screen ${comment.screenId}` : `--ids ${comment.id}`} --all`;
+    /* Only plain names go into a printed command: a screen id or a comment id from the review file could carry shell syntax. */
+    const plainScreen = /^[A-Za-z0-9_.:-]+$/.test(String(comment.screenId));
+    const more = `node design-canvas/affected.mjs --canvas ${canvas} ${screen && plainScreen ? `--screen ${comment.screenId}` : `--ids ${/^c\d+$/.test(String(comment.id)) ? comment.id : "<its id>"}`} --all`;
     out.set(comment.id, formatAffected(result, { canvas, root: graph.root, all, system, names, more }));
   }
   return out;

@@ -1,7 +1,7 @@
 # The words a canvas draws
 
-Read this before writing a declaration. `tool/copy-rules.mjs` checks every rule here mechanically and
-`check-canvas.mjs` fails on a violation, so a canvas cannot ship copy that breaks them.
+Read this before writing a declaration. `tool/copy-rules.mjs` checks the caps and every rule below that a machine can
+decide, and `check-canvas.mjs` fails on a violation.
 
 The standard is **ASD-STE100, Simplified Technical English**, chosen for the reason it exists: the reader
 is a teammate opening the index cold, a developer looking for the state they have to build, or the
@@ -41,7 +41,7 @@ title that is really two things shows up as two different names for one canvas.
 
 ## What the checker cannot do
 
-It cannot tell whether the words are TRUE, whether the note is worth reading, or whether a label
+It cannot tell whether the words are true, whether the note is worth reading, or whether a label
 describes the frame above it. The claims in `expect` cover the last of those; the first two are what a
 reviewer is for. A canvas that passes this check can still be useless, so read your own note once and
 ask what a stranger would learn from it.

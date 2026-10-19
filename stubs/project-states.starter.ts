@@ -9,7 +9,7 @@
  * and `canvas-state-pin.tsx` and the canvas still works.
  *
  * WHY IT RUNS AT MODULE SCOPE rather than in an effect. The states have to be in place before the app's
- * own components mount. A page that reads a store ONCE into `useState` on mount, or memoises a selector
+ * own components mount. A page that reads a store ONCE into `useState` on mount, or memoizes a selector
  * with an empty dependency list, is exactly the "a mount effect quietly undoes what you seeded" trap:
  * the frame renders the default while the declaration claims a special case, and nothing about the
  * picture says so. Applying in an effect loses that race. This applies as the module is evaluated in the

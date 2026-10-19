@@ -10,9 +10,13 @@
  *                                                                  # reopened one, and the other frames a fix reaches
  *   node design-canvas/drain.mjs --canvas trips --ids c40,c41,c46
  *   node design-canvas/drain.mjs --canvas trips --all               # every unconsumed comment
- *   node design-canvas/drain.mjs --canvas trips --ids c32 --answer "The count is the same aggregate the cards read"
- *                                                                  # a comment that asked something: the answer lands
- *                                                                  # in the record and is drawn under the pin
+ *   node design-canvas/drain.mjs --canvas trips --ids c32 --answer-file answer.txt
+ *                                                                  # a comment that asked something: the answer, read
+ *                                                                  # from a file (or `-` for stdin), lands in the record
+ *                                                                  # and is drawn under the pin. Words go through a file,
+ *                                                                  # never inside a command line, where quotes and `$(`
+ *                                                                  # in them would be run by the shell. `--answer "<text>"`
+ *                                                                  # still works for plain words.
  *   node design-canvas/drain.mjs --canvas trips --orphans           # only the ones with no screen left
  *
  * THE ADDRESS COMES FROM `design-canvas/settings.json`; there is no default port, and `--url` overrides it for one run.
@@ -22,6 +26,7 @@
  *
  * DELETE WITH: the design-canvas/ folder.
  */
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -144,7 +149,7 @@ if (has("list") || (!has("all") && !has("orphans") && !argOf("ids"))) {
   if (orphans.length > 0)
     console.log(
       `\n${orphans.length} of them point at screens this canvas no longer declares, so there is nothing to open:\n` +
-        `  read the note, decide whether it still applies, and drain it either way — \`--orphans\` does exactly those.`,
+        `  read the note, decide whether it still applies, and drain it either way: \`--orphans\` does exactly those.`,
     );
   if (!has("list"))
     console.log("\nnothing drained: name them with --ids c1,c2 or pass --all");
@@ -169,7 +174,16 @@ if (wanted.length === 0) {
  * AN ANSWER IS FOR ONE COMMENT. The reviewer reads it under that pin, so a text sent to several ids would be
  * the same sentence pinned to several different questions. The route refuses it too; refusing here says why.
  */
-const answer = argOf("answer");
+const answerFile = argOf("answer-file");
+let answer = argOf("answer");
+if (answerFile !== null) {
+  try {
+    answer = readFileSync(answerFile === "-" ? 0 : answerFile, "utf8");
+  } catch (error) {
+    console.error(`--answer-file: ${answerFile} cannot be read (${error.code ?? error.message})`);
+    process.exit(1);
+  }
+}
 if (answer !== null && answer.trim().length === 0) {
   console.error("--answer needs the words; an empty answer would be a consumed question with nothing under it");
   process.exit(1);
@@ -207,7 +221,7 @@ console.log(
 if (already.length > 0)
   console.log(`already worked before this run: ${already.join(", ")}`);
 if (unknown.length > 0) {
-  console.error(`NOT IN THE FILE: ${unknown.join(", ")}`);
+  console.error(`not in the file: ${unknown.join(", ")}`);
   process.exitCode = 1;
 }
 const leftOrphans = after.filter(isOrphan);
@@ -219,5 +233,5 @@ console.log(
 if (leftOrphans.length > 0)
   console.log(
     `  ${leftOrphans.length} of those (${leftOrphans.map((one) => one.id).join(", ")}) have no screen on this ` +
-      `canvas any more — they are not work you missed. \`--orphans\` clears them once you have read them.`,
+      `canvas any more, so they are not work you missed. \`--orphans\` clears them once you have read them.`,
   );

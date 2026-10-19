@@ -22,11 +22,11 @@
  * their text are in `tool/tests/shot-guard.test.mjs` and `capture-network.test.mjs`):
  *
  *   a blank white page                       3kb      1 character
- *   a grey skeleton, no words                4 to 8kb 0 to 11 characters
+ *   a gray skeleton, no words                4 to 8kb 0 to 11 characters
  *   three lines of real copy on white        7kb      50 characters
  *   a page with only a picture on it         15kb     1 character
  *   an app shell, a title and six rows       20kb     284 characters
- *   a dense table of 144 coloured cells      146kb    1811 characters
+ *   a dense table of 144 colored cells      146kb    1811 characters
  *
  * "FAR SMALLER" is under 40 percent of the picture it replaces. A real frame is 20 to 150kb, so the skeleton or the blank page
  * that took its place is 2 to 40 percent of it and falls under the line, while a frame that changed a little stays far above it,

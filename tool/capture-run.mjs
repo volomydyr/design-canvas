@@ -118,14 +118,14 @@ if (!has("reuse") && (await up())) {
     console.error(`capture-run: :${taken} and the twenty ports above it are all busy.`);
     process.exit(1);
   }
-  say(`:${taken} is busy with a server this run did not start — using :${port} instead`);
+  say(`:${taken} is busy with a server this run did not start, so using :${port} instead`);
 }
 
 if (has("reuse")) {
   say(`reusing whatever is already serving ${base}, because --reuse says so`);
 } else {
   const code = await phase("build", async () => {
-    say(`building into ${buildDir} — the dev server's build folder is not touched`);
+    say(`building into ${buildDir}, and the dev server's build folder is not touched`);
     const [command, ...rest] = parts(buildCmd);
     return spawnTracked(command, rest, { cwd: ROOT, env: buildEnv });
   });
@@ -166,8 +166,8 @@ say("done");
 for (const [name, ms] of timings) console.log(`  ${name.padEnd(10)} ${(ms / 1000).toFixed(1)}s`);
 console.log(`  ${"total".padEnd(10)} ${((Date.now() - started) / 1000).toFixed(1)}s`);
 /* Exit code 2 is capture.mjs saying it could not start (no browser, no session, a login redirect on the first page). */
-if (status === 2) say("the capture could not start, so no screen was tried — the line above names the fix");
-else if (status !== 0) say("some screens do not prove their claims — see the problems above");
+if (status === 2) say("the capture could not start, so no screen was tried: the line above names the fix");
+else if (status !== 0) say("some screens do not prove their claims: see the problems above");
 /* The capture's next steps, repeated last: the timings above would otherwise push them out of the tail a reader looks at. */
 const next = status === 0 ? output.split("\n").filter((line) => line.startsWith("next: ")) : [];
 if (next.length > 0) console.log(`\n${next.join("\n")}`);

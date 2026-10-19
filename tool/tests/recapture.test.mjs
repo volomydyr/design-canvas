@@ -18,7 +18,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { filesReachedFrom } from "../closure.mjs";
-import { declStamp, fileStamp, firstFrames, inputsDigest, lanesFor, openCanvases, staleFrames, VIEWING_TTL_MS } from "../recapture.mjs";
+import { declStamp, fileStamp, firstFrames, holderRunning, inputsDigest, lanesFor, openCanvases, staleFrames, takeLock, VIEWING_TTL_MS } from "../recapture.mjs";
 
 const TOOL = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -379,3 +379,67 @@ test("a turn that edits a shared component recaptures only the open canvas, its 
   assert.equal(started().length, 2);
 });
 const logFileOf = (dir) => path.join(dir, "rounds", "recapture-log.txt");
+
+test("a turn whose background run captured nothing is retried by the next turn, though nothing changed in between", PROJECT ? {} : { skip: "set CANVAS_TEST_PROJECT to a project that has esbuild" }, async () => {
+  const { root, dir } = canvasFolder();
+  for (const file of ["checks-answer.mjs", "reminders.mjs"]) copyFileSync(path.join(TOOL, file), path.join(dir, file));
+  symlinkSync(path.join(PROJECT, "node_modules"), path.join(root, "node_modules"));
+  write(root, "components/card.tsx", "export const Card = () => null;\n");
+  write(root, "app/home/page.tsx", 'import { Card } from "../../components/card";\nexport default () => Card;\n');
+  write(root, "design-canvas/project/flows.ts", `export const CANVASES = ${JSON.stringify({ one: { title: "one", viewport: { w: 800, h: 600 }, flows: [{ id: "f", title: "F", screens: [{ id: "one-home", label: "home", route: "/home", source: ["app/home/page.tsx"] }] }] } })};\n`);
+  const { project: served } = await import(path.join(dir, "dump-screens.mjs"));
+  const { declarationFor, loadDeclarations } = await import(path.join(dir, "declarations.mjs"));
+  const declaration = served(declarationFor(await loadDeclarations(dir), "one").declaration);
+  const shots = declaration.screens.map((screen) => ({ screenId: screen.id, stamp: { decl: declStamp(screen, declaration), sources: Object.fromEntries(filesReachedFrom(screen.source, root).map((rel) => [rel, fileStamp(root, rel)])) } }));
+  write(root, "design-canvas/shots/one/manifest.json", JSON.stringify({ shots }));
+  /* A port nothing listens on yet. */
+  const probe = createServer();
+  await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
+  const port = probe.address().port;
+  await new Promise((resolve) => probe.close(resolve));
+  write(root, "design-canvas/settings.json", JSON.stringify({ appUrl: `http://127.0.0.1:${port}` }));
+  const calls = path.join(root, "calls.txt");
+  write(root, "design-canvas/capture.mjs", `import { appendFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(calls)}, JSON.stringify(process.argv.slice(2)) + "\\n");\n`);
+  const env = { ...process.env, CANVAS_ANSWERS_FILE: path.join(root, "answers.json"), CANVAS_RECAPTURE_QUIET_MS: "50" };
+  const viewing = () => write(root, "design-canvas/rounds/viewing.json", JSON.stringify({ viewers: { "tab-aaaaaaaa": { canvas: "one", tab: "kinds", visible: ["one-home"], at: new Date().toISOString() } } }));
+  const hook = () => spawnSync(process.execPath, [path.join(dir, "recapture.mjs"), "--hook"], { cwd: root, input: "{}", encoding: "utf8", env });
+  const lock = path.join(dir, "rounds", "recapture.lock");
+  const settled = () => waitFor(() => !existsSync(lock) && !existsSync(path.join(dir, "rounds", "recapture.again")));
+  const started = () => (existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n").filter(Boolean) : []);
+  const log = () => (existsSync(logFileOf(dir)) ? readFileSync(logFileOf(dir), "utf8") : "");
+
+  /* An edit while the dev server is down: nothing is captured. */
+  write(root, "components/card.tsx", "export const Card = () => 'changed';\n");
+  viewing();
+  hook();
+  assert.ok(await waitFor(() => log().includes("nothing answers")));
+  assert.ok(await settled());
+  assert.deepEqual(started(), []);
+  /* The server is up, the canvas still open, nothing edited: the next turn captures. */
+  const server = createServer((request, response) => response.end("ok"));
+  await new Promise((resolve) => server.listen(port, "127.0.0.1", resolve));
+  after(() => server.close());
+  viewing();
+  hook();
+  assert.ok(await waitFor(() => started().length > 0), log().slice(-800));
+  assert.ok(await settled());
+  /* A run that worked is not repeated by a turn that changed nothing. */
+  viewing();
+  hook();
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.ok(await settled());
+  assert.equal(started().length, 1);
+});
+
+test("a lock whose pid now belongs to another process is taken over; one its writer still holds is not", () => {
+  const dir = project({});
+  const file = path.join(dir, "rounds", "capture.lock");
+  /* Written long before the live process with that pid started: the pid was reused. */
+  write(dir, "rounds/capture.lock", JSON.stringify({ pid: process.pid, at: "2000-01-01T00:00:00.000Z" }));
+  assert.equal(holderRunning(JSON.parse(readFileSync(file, "utf8"))), false);
+  assert.equal(takeLock(file), true);
+  assert.equal(JSON.parse(readFileSync(file, "utf8")).pid, process.pid);
+  /* Written by this process, which is running: held. */
+  assert.equal(holderRunning(JSON.parse(readFileSync(file, "utf8"))), true);
+  assert.equal(takeLock(file), false);
+});

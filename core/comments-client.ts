@@ -29,6 +29,35 @@ function at(endpoint: string, canvas: string, extra?: string): string {
   return `${endpoint}?${query}`;
 }
 
+/**
+ * IS THIS PAGE DRIVEN BY A TOOL RATHER THAN READ BY THE REVIEWER? An automated browser says so (`navigator.webdriver`); an agent
+ * driving a real browser through an extension does not, so its tools open the canvas with `?agent=1`, which this page load and
+ * every in-page navigation after it remember. Such a page never reports the canvas open and never counts as the first visit.
+ * PURE given its inputs, and exported for the tests.
+ */
+export function drivenByTool(
+  nav: { webdriver?: boolean } | undefined = typeof navigator === "undefined" ? undefined : navigator,
+  search: string = typeof location === "undefined" ? "" : location.search,
+  store: { getItem(key: string): string | null; setItem(key: string, value: string): void } | undefined = (() => {
+    try {
+      return typeof sessionStorage === "undefined" ? undefined : sessionStorage;
+    } catch {
+      return undefined;
+    }
+  })(),
+): boolean {
+  if (nav?.webdriver) return true;
+  try {
+    if (new URLSearchParams(search).has("agent")) {
+      store?.setItem("design-canvas-agent", "1");
+      return true;
+    }
+    return store?.getItem("design-canvas-agent") === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** This page's id in the reports that a canvas is open, one per page load, so two tabs count as two viewers. */
 const VIEWER =
   typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -37,15 +66,15 @@ const VIEWER =
 
 /**
  * Tell the dev server this canvas is open and visible, with the tab, the device and the frames on screen, or, with `null`, that
- * this page no longer shows it. The recapture photographs open canvases first and refreshes one as it opens. An automated
- * browser (an agent checking its work, the oracle) is not a reviewer and never reports. A failed report is dropped: the next
+ * this page no longer shows it. The recapture photographs open canvases first and refreshes one as it opens. A page driven by a
+ * tool (`drivenByTool`: an agent checking its work, the oracle) is not a reviewer and never reports. A failed report is dropped: the next
  * one, or the two-minute expiry, corrects it.
  */
 export async function reportViewing(
   canvas: string,
   seen: { tab: string; device: string; visible: string[] } | null,
 ): Promise<void> {
-  if (typeof navigator !== "undefined" && navigator.webdriver) return;
+  if (drivenByTool()) return;
   try {
     await fetch(at(CANVAS_COMMENTS_ENDPOINT, canvas), {
       method: "PATCH",
@@ -110,8 +139,9 @@ const reportedVisits = new Set<string>();
  * key at the end of a run) is not written again by a later look.
  */
 export async function markViewed(canvas: string): Promise<Waiting | null> {
-  /* An automated browser (an agent checking its work, the oracle) is not the reviewer, so it never counts as the visit. */
-  if (typeof navigator !== "undefined" && navigator.webdriver) return null;
+  /* An automated browser or an agent's tools (an agent checking its work, the oracle) is not the reviewer, so it never counts as
+     the visit. */
+  if (drivenByTool()) return null;
   if (reportedVisits.has(canvas)) return null;
   reportedVisits.add(canvas);
   try {
@@ -394,13 +424,16 @@ export function reviewQueueOn<T extends { screenId: string; groupId: string }>(
   comments: CanvasComment[],
   frames: T[],
 ): CanvasComment[] {
-  return comments.filter(
-    (comment) =>
-      Boolean(comment.consumedAt) &&
-      (!comment.kind || comment.kind === "note") &&
-      homeFrameOf(comment, frames) !== undefined,
-  );
+  return comments.filter((comment) => reviewable(comment) && homeFrameOf(comment, frames) !== undefined);
 }
+
+/**
+ * A NOTE IS THE REVIEWER'S TO CLOSE once the agent has marked it worked (`consumedAt`), whether or not the recapture changed
+ * the picture and whether or not it was answered: the agent has handed it back. Its pin offers Approve and Dismiss, and the
+ * comments queue counts it; one predicate for both, so the count and the pin always agree. Until then it is the agent's
+ * instruction: Edit and Delete. A verdict is never a note to close.
+ */
+export const reviewable = (comment: CanvasComment) => Boolean(comment.consumedAt) && (!comment.kind || comment.kind === "note");
 
 /**
  * WHAT WAITS FOR THE REVIEWER ON ONE CANVAS, by kind. `frames` is every frame the canvas draws (`screenId`, `groupId`),

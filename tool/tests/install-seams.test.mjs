@@ -181,3 +181,14 @@ test("a project that cannot load playwright is told the one command, with its pa
   assert.doesNotMatch(install(pnpm).stdout, /Playwright:/);
   assert.doesNotMatch(check(pnpm).stdout, /playwright does not load/);
 });
+
+/* ------------------------------------------------------------------ esbuild */
+
+test("a project that cannot load esbuild is told the one command, and nothing once it loads", () => {
+  const pnpm = project({ "pnpm-lock.yaml": "lockfileVersion: '9.0'\n" });
+  install(pnpm);
+  assert.match(check(pnpm).stdout, /- esbuild does not load from design-canvas\/, and every tool that reads the screen list needs it: run pnpm add -D esbuild$/m);
+
+  fakePackage(pnpm, "esbuild", "0.25.0");
+  assert.doesNotMatch(check(pnpm).stdout, /esbuild does not load/);
+});

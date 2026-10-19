@@ -15,6 +15,7 @@ import { createPortal } from "react-dom";
 import { DANGER, MOTION_STYLE } from "./canvas-motion";
 import { drawsSmall, hangsBelow } from "./picture-size";
 import { cn } from "./cn";
+import { reviewable } from "./comments-client";
 import { CanvasTooltip } from "./canvas-tooltip";
 import {
   IconClose,
@@ -583,14 +584,6 @@ export function CanvasFrame({
     }
   };
 
-  /**
-   * A comment is the reviewer's to close once the agent has read it and the screen was recaptured or the agent
-   * answered under the pin. Before that it is still an instruction: Edit and Delete.
-   */
-  const reviewable = (comment: CanvasComment) =>
-    Boolean(comment.consumedAt) &&
-    (comment.stale === true || Boolean(comment.answer));
-
   /** Another round on a comment already answered: new words, new picture, back into the agent's queue. */
   const sendFeedback = async (draft: { id: string; note: string }) => {
     if (!shot) return;
@@ -880,7 +873,7 @@ export function CanvasFrame({
           /* The canvas tooltip names the device, since the icon has no word; `mark={0}` as the button is visibly pressable. */
           <CanvasTooltip
             mark={0}
-            title={onTwin.device === "phone" ? "Show on mobile" : "Show on desktop"}
+            title={onTwin.device === "phone" ? "Show on phone" : "Show on desktop"}
             label={
               <button
                 type="button"

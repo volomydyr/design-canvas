@@ -352,3 +352,43 @@ test("the git-ignored rounds folder is where the list lives, so it never reaches
   const rules = readFileSync(path.join(HERE, "..", "..", "scripts", "ignore-rules.mjs"), "utf8");
   assert.match(rules, /"design-canvas\/rounds\/"/);
 });
+
+test("drain --answer-file sends the answer read from a file, quotes, $( ) and newlines untouched by any shell", async () => {
+  const answer = 'It is the same "aggregate" $(not run) `nor this`\nand a second line';
+  const sent = [];
+  const server = http.createServer((request, response) => {
+    response.setHeader("content-type", "application/json");
+    let body = "";
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      if (request.method === "PATCH") sent.push(JSON.parse(body));
+      response.end(JSON.stringify({ comments: [{ id: "c7", screenId: "home", note: "Why this number?", consumedAt: sent.length ? "2026-01-01T00:00:00.000Z" : null }], screens: [{ id: "home" }] }));
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const { root } = project({ appUrl: `http://127.0.0.1:${server.address().port}` });
+    writeFileSync(path.join(root, "answer.txt"), answer);
+    const out = await run(path.join(root, "design-canvas", "drain.mjs"), ["--canvas", "main", "--ids", "c7", "--answer-file", "answer.txt"], { cwd: root });
+    assert.equal(out.code, 0, out.stderr);
+    assert.deepEqual(sent, [{ id: "c7", consumed: true, answer }]);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test("verdicts record takes the reviewer's words from a file, quotes and $( ) untouched, and refuses without words", async () => {
+  const { canvas } = project();
+  mkdirSync(path.join(canvas, "comments"));
+  writeFileSync(path.join(canvas, "comments", "demo.json"), JSON.stringify({ comments: [] }));
+  const words = 'Keep "this" one $(really) `yes`';
+  writeFileSync(path.join(canvas, "said.txt"), `${words}\n`);
+  const recorded = await run(path.join(canvas, "verdicts.mjs"), ["record", "--canvas", "demo", "--screen", "option-a", "--value", "like", "--said-file", path.join(canvas, "said.txt")], { cwd: canvas });
+  assert.equal(recorded.code, 0, recorded.stderr);
+  const [verdict] = JSON.parse(readFileSync(path.join(canvas, "comments", "demo.json"), "utf8")).comments;
+  assert.equal(verdict.kind, "like");
+  assert.ok(verdict.note.startsWith(`${words}\n\n`), verdict.note);
+  const none = await run(path.join(canvas, "verdicts.mjs"), ["record", "--canvas", "demo", "--screen", "option-b", "--value", "dislike"], { cwd: canvas });
+  assert.equal(none.code, 1);
+  assert.match(none.stderr, /needs the reviewer's words \(--said-file\)/);
+});

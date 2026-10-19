@@ -308,12 +308,12 @@ export function lintStructure(decl, { evidenceDir, root } = {}) {
         if (!existsSync(path.join(root, file))) problems.push(`${screen.id}: names the file ${file} and there is no such file`);
   const explorations = decl.explorations ?? [];
   for (const exploration of explorations) {
-    if (!exploration.original) problems.push(`exploration ${exploration.id}: no \`original\` — every panel opens with today's design as its first frame`);
+    if (!exploration.original) problems.push(`exploration ${exploration.id}: no \`original\`, and every panel opens with today's design as its first frame`);
     else {
       const originalScreen = screens.find((screen) => screen.id === exploration.original);
       if (!originalScreen) problems.push(`exploration ${exploration.id}: original "${exploration.original}" is not a screen this canvas declares`);
       else if (originalScreen.view === "exploration")
-        problems.push(`exploration ${exploration.id}: original "${exploration.original}" is an exploration frame — the reference comes from the permanent views`);
+        problems.push(`exploration ${exploration.id}: original "${exploration.original}" is an exploration frame, and the reference comes from the permanent views`);
     }
     /* A SUGGESTION HANGS UNDER A FRAME OF ITS OWN PANEL, which is drawn there, or under the panel's Today frame (graph-layout.ts, the
        same rule); one naming a frame of another panel, or another suggestion, would hang nowhere the reviewer can find it. */
@@ -341,12 +341,12 @@ export function lintStructure(decl, { evidenceDir, root } = {}) {
   /* An explanation frame is a text panel in the flows: never captured, never grouped, never an option, and it proves nothing. */
   for (const screen of screens) {
     if (screen.explain) {
-      if (screen.url) problems.push(`${screen.id}: carries both a route and an explanation — there is nothing to open at an explanation frame, so drop one of them`);
-      if (screen.kind) problems.push(`${screen.id}: an explanation frame filed under "${screen.kind}" — it never appears in the grouped screens, so it takes no section`);
-      if (screen.view === "exploration") problems.push(`${screen.id}: an explanation frame inside an exploration — explanations narrate flows only`);
+      if (screen.url) problems.push(`${screen.id}: carries both a route and an explanation. There is nothing to open at an explanation frame, so drop one of them`);
+      if (screen.kind) problems.push(`${screen.id}: an explanation frame filed under "${screen.kind}", but it never appears in the grouped screens, so it takes no section`);
+      if (screen.view === "exploration") problems.push(`${screen.id}: an explanation frame inside an exploration, and explanations narrate flows only`);
       if ((screen.expect ?? []).length > 0 || (screen.expectMissing ?? []).length > 0)
-        problems.push(`${screen.id}: claims on an explanation frame — nothing is captured there, so nothing can be proved`);
-    } else if (!screen.url) problems.push(`${screen.id}: no route and no explanation — a screen is a picture of an address or an explanation of a step, never neither`);
+        problems.push(`${screen.id}: claims on an explanation frame, but nothing is captured there, so nothing can be proved`);
+    } else if (!screen.url) problems.push(`${screen.id}: no route and no explanation. A screen is a picture of an address or an explanation of a step, never neither`);
   }
 
   /* A section that nearly exists draws a heading that looks deliberate and is wrong, so a canvas that names its sections holds
@@ -369,13 +369,13 @@ export function lintStructure(decl, { evidenceDir, root } = {}) {
   };
   for (const group of decl.groups ?? []) {
     if (group.groupedOnly || !(group.edges ?? []).length) continue;
-    if (!group.edges.some(isAction)) problems.push(`flow "${group.id}" has no action edge — a chain of states is grouped screens, not a user flow`);
+    if (!group.edges.some(isAction)) problems.push(`flow "${group.id}" has no action edge, and a chain of states is grouped screens, not a user flow`);
     for (const edge of group.edges) {
       const where = `${group.id}: edge ${edge.from} → ${edge.to}`;
       if (isAction(edge) && !edge.origin && !edge.noOrigin)
-        problems.push(`${where} ("${edge.label}") is a press with no origin and no stated reason — declare where the press lives, or why the picture cannot show it`);
-      if (isAction(edge) && edge.origin && edge.noOrigin) problems.push(`${where} declares both origin and noOrigin — it cannot both have a place and lack one`);
-      if (!isAction(edge) && edge.origin) problems.push(`${where} ("${edge.label}") is a condition with an origin — nothing was pressed, so nothing can be highlighted`);
+        problems.push(`${where} ("${edge.label}") is a press with no origin and no stated reason: declare where the press lives, or why the picture cannot show it`);
+      if (isAction(edge) && edge.origin && edge.noOrigin) problems.push(`${where} declares both origin and noOrigin, and it cannot both have a place and lack one`);
+      if (!isAction(edge) && edge.origin) problems.push(`${where} ("${edge.label}") is a condition with an origin, but nothing was pressed, so nothing can be highlighted`);
     }
   }
   return problems;
@@ -409,9 +409,17 @@ export function lintAll(decl, { shots = [], evidenceDir, root } = {}) {
 export function stateNames(texts) {
   const names = new Set();
   const prefixes = [];
+  /* A name is a string where a state is named: a key (`"menu-open":`), the first of a pair (`["menu-open", apply]`), a case or a
+     comparison. A string that is a value (`status: "Pending"`) is not one. */
+  const named = (text, index, length) => {
+    const before = text.slice(Math.max(0, index - 12), index);
+    const after = text.slice(index + length, index + length + 4);
+    return /^\s*:/.test(after) || (/\[\s*$/.test(before) && /^\s*(?:,|\]\s*:)/.test(after)) || /\bcase\s*$/.test(before) || /[!=]==?\s*$/.test(before) || /^\s*[!=]==?/.test(after);
+  };
   for (const text of texts) {
-    for (const match of text.matchAll(/(["'])((?:\\.|(?!\1)[^\\\n])*)\1/g)) names.add(match[2]);
+    for (const match of text.matchAll(/(["'])((?:\\.|(?!\1)[^\\\n])*)\1/g)) if (named(text, match.index, match[0].length)) names.add(match[2]);
     for (const match of text.matchAll(/`([^`]*)`/g)) {
+      if (!named(text, match.index, match[0].length)) continue;
       const at = match[1].indexOf("${");
       if (at === -1) names.add(match[1]);
       else if (at > 0) prefixes.push(match[1].slice(0, at));
@@ -422,19 +430,40 @@ export function stateNames(texts) {
 }
 
 /**
+ * Do the states files build their names in code from something read elsewhere (`[s.id, apply]`, `[key]: apply`, names imported
+ * from outside the canvas's project folder)? Then the names cannot be read from the text, and the capture's own mark for an
+ * unknown pin is the guard.
+ */
+export const statesBuiltInCode = (texts) =>
+  (texts ?? []).some((text) => /\[\s*[A-Za-z_$][\w$.]*\s*,\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/.test(text) || /\[\s*[A-Za-z_$][\w$.]*\s*\]\s*:/.test(text));
+
+/**
  * EVERY PINNED STATE EXISTS: a frame whose `state` the states file does not have renders the default under the state's name.
  * `statesTexts` is the states file's text plus the canvas files it imports, or null when the project has no states file.
  * Frozen history is exempt: its state is gone by definition, and its picture is never retaken.
  */
 export function unknownStateProblems(screens, statesTexts) {
+  return unknownStates(screens, statesTexts).problems;
+}
+
+/** The same check as problems and notes: a pin the text cannot vouch for, when the names are built in code, is a note. */
+export function unknownStates(screens, statesTexts) {
   const pinned = (screens ?? []).filter((screen) => screen.state && !screen.frozen && !screen.explain && !screen.wireframe);
-  if (pinned.length === 0) return [];
+  if (pinned.length === 0) return { problems: [], notes: [] };
   if (statesTexts === null)
-    return pinned.map((screen) => `${screen.id}: pins the state "${screen.state}" and this project has no design-canvas/project/states.ts`);
+    return { problems: pinned.map((screen) => `${screen.id}: pins the state "${screen.state}" and this project has no design-canvas/project/states.ts`), notes: [] };
   const { names, prefixes } = stateNames(statesTexts);
-  return pinned
-    .filter((screen) => !names.has(screen.state) && !prefixes.some((prefix) => screen.state.startsWith(prefix)))
-    .map((screen) => `${screen.id}: pins the state "${screen.state}", which design-canvas/project/states.ts does not have, so the frame would show the default: add the state, or name one that exists`);
+  const unknown = pinned.filter((screen) => !names.has(screen.state) && !prefixes.some((prefix) => screen.state.startsWith(prefix)));
+  if (unknown.length === 0) return { problems: [], notes: [] };
+  if (statesBuiltInCode(statesTexts))
+    return {
+      problems: [],
+      notes: [`design-canvas/project/states.ts builds its state names in code, so ${unknown.length} pinned state(s) could not be checked from its text (${unknown.slice(0, 4).map((screen) => `"${screen.state}"`).join(", ")}); the capture marks a pin the page does not have`],
+    };
+  return {
+    problems: unknown.map((screen) => `${screen.id}: pins the state "${screen.state}", which design-canvas/project/states.ts does not have, so the frame would show the default: add the state, or name one that exists`),
+    notes: [],
+  };
 }
 
 /* ------------------------------------------------------------------ coverage: what the declared screens reach */

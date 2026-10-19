@@ -10,7 +10,7 @@
  * HOW IT READS. Both pictures are decoded and compared INSIDE the capture's own browser (Chromium decodes WebP; Node has no
  * decoder and this tool has no image dependency), so only the numbers cross back. A pixel counts as changed when its four
  * channels differ by more than a small tolerance in total, which ignores encoder noise and nothing a person would see. A
- * comment's rectangle is widened a little (a fix near a pin moves its neighbours) before anything is called "outside".
+ * comment's rectangle is widened a little (a fix near a pin moves its neighbors) before anything is called "outside".
  *
  * A FLAG IS NOT A FAILURE. It is an unexpected change brought to the agent's attention before the reviewer meets it. The run
  * still exits by its own rules; the report is evidence, printed under the capture's own lines, and saved beside the
@@ -275,7 +275,7 @@ export async function reportVisualChange({ context, inputs, comments, outDir, ca
   log(
     `${frames.length} frame(s) re-photographed: ${frames.filter((f) => f.status === "identical").length} identical, ` +
       `${frames.filter((f) => f.status === "changed").length} changed, ${frames.filter((f) => f.status === "new").length} new` +
-      (flagged.length > 0 ? `; ${flagged.length} FLAGGED for changing where nobody asked: ${flagged.map((f) => f.id).join(", ")}` : "; none changed where nobody asked") +
+      (flagged.length > 0 ? `; ${flagged.length} flagged for changing where nobody asked: ${flagged.map((f) => f.id).join(", ")}` : "; none changed where nobody asked") +
       (kept.length > 0 ? `; ${kept.length} more from this round's earlier attempt kept on its record` : ""),
   );
   return frames;
@@ -299,9 +299,22 @@ export const CONTROLS = () => {
   const selector =
     'button,a[href],[role=button],[role=link],[role=tab],[role=menuitem],[role=checkbox],[role=switch],[role=radio],[role=combobox],' +
     "input:not([type=hidden]),select,textarea,label,h1,h2,h3,h4,h5,h6,th,[role=columnheader]";
+  /* Rows of data (a table's body, a grid's rows, the items of a long list) are what the mock data shows, not what the screen
+     offers: another option showing other rows has removed nothing. */
+  const ROWS = "tbody, [role=row]:not([role=columnheader] *)";
+  const inRows = (el) => {
+    if (el.closest(ROWS) && !el.closest("thead, th, [role=columnheader]")) return true;
+    const item = el.closest("li");
+    return Boolean(item?.parentElement && item.parentElement.children.length > 3);
+  };
+  const dataLines = new Set();
+  for (const box of document.querySelectorAll("tbody, li")) {
+    if (box.tagName === "LI" && !(box.parentElement && box.parentElement.children.length > 3)) continue;
+    for (const line of (box.innerText || "").split("\n")) dataLines.add(line.replace(/\s+/g, " ").trim());
+  }
   const out = [];
   for (const el of document.querySelectorAll(selector)) {
-    if (!shown(el)) continue;
+    if (!shown(el) || inRows(el)) continue;
     let text = (el.innerText || "").replace(/\s+/g, " ").trim();
     if (!text) text = (el.getAttribute("aria-label") || el.getAttribute("placeholder") || el.getAttribute("title") || "").replace(/\s+/g, " ").trim();
     if (text && text.length <= 80) out.push(text);
@@ -310,12 +323,20 @@ export const CONTROLS = () => {
   const named = [...new Set(out)];
   for (const line of (document.body?.innerText ?? "").split("\n")) {
     const text = line.replace(/\s+/g, " ").trim();
-    if (text.length < 2 || text.length > 60 || !/\p{L}/u.test(text) || /\d/.test(text)) continue;
+    if (text.length < 2 || text.length > 60 || !/\p{L}/u.test(text) || /\d/.test(text) || dataLines.has(text)) continue;
     if (!named.includes(text) && named.some((one) => text.includes(one))) continue;
     out.push(text);
   }
   return [...new Set(out)].slice(0, 400);
 };
+
+/**
+ * EVERY SHORT LINE A PAGE PRINTS, digits and data rows included, kept on the shot (`words`): what an option still shows is judged
+ * by it, so a label it prints as plain text (a card's "Visitors (7d)" where today's screen had a column header) is not called
+ * removed. Self-contained: it runs in the page.
+ */
+export const WORDS = () =>
+  [...new Set((document.body?.innerText ?? "").split("\n").map((line) => line.replace(/\s+/g, " ").trim()).filter((line) => line.length > 0 && line.length <= 80))].slice(0, 2000);
 
 const sameWords = (text) => text.toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -332,13 +353,14 @@ export function removedControls({ explorations, shots, ids = null }) {
       if (typeof screen.redesigns !== "string") continue;
       if (ids && !ids.has(screen.id) && !ids.has(screen.redesigns)) continue;
       const mine = byId.get(screen.id)?.controls;
+      const printed = byId.get(screen.id)?.words;
       const today = byId.get(screen.redesigns)?.controls;
       const option = screen.under ?? screen.suggests ?? screen.id;
       if (!Array.isArray(mine) || !Array.isArray(today)) {
         out.push({ option, frame: screen.id, today: screen.redesigns, removed: null });
         continue;
       }
-      const kept = new Set(mine.map(sameWords));
+      const kept = new Set([...mine, ...(Array.isArray(printed) ? printed : [])].map(sameWords));
       out.push({ option, frame: screen.id, today: screen.redesigns, removed: today.filter((one) => !kept.has(sameWords(one))) });
     }
   }

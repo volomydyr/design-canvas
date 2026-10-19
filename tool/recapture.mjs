@@ -34,14 +34,15 @@
  * WHEN IT DOES NOTHING. No dev server answering at the project's `appUrl` (design-canvas/settings.json), no settings, a
  * declaration that cannot be read, or this machine's answer to the install question is not yes (`--hook`, `--focus` and
  * `--opened`): one line in the log and the frames stay out of date, which a later moment, a manual capture and `check-canvas.mjs`
- * all still see. Nothing is lost by skipping.
+ * all still see. Nothing is lost by skipping: a background run that captured nothing, or whose capture failed, makes the next
+ * turn's end try again even when that turn changed nothing.
  *
  * THE LOG is `design-canvas/rounds/recapture-log.txt` (scratch, gitignored with the rest of `rounds/`): what was found, and the
  * capture's own output.
  *
  * DELETE WITH: the design-canvas/ folder.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -359,8 +360,31 @@ const alive = (pid) => {
   }
 };
 
+/** When a process started, from `ps`, or null where that cannot be told. */
+const startedAt = (pid) => {
+  try {
+    const at = Date.parse(execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+    return Number.isFinite(at) ? at : null;
+  } catch {
+    return null;
+  }
+};
+
 /**
- * Take a lock file. False when a live process holds it; a lock left by a process that died is taken over. Shared with
+ * Is a lock's holder still the process that wrote it? Its pid is alive, and that process started before the lock was written:
+ * lock files outlive a crash and a reboot, after which the same pid soon belongs to some other process.
+ */
+export function holderRunning(holder) {
+  if (!holder?.pid || !alive(holder.pid)) return false;
+  const at = Date.parse(holder.at);
+  const started = Number.isFinite(at) ? startedAt(holder.pid) : null;
+  /* `ps` gives whole seconds. */
+  return started === null || started <= at + 2000;
+}
+
+/**
+ * Take a lock file. False when a live process holds it; a lock left by a process that died, or whose pid now belongs to
+ * another process, is taken over. Shared with
  * `capture.mjs`, which holds one per canvas while it reads and writes that canvas's manifest.
  */
 export function takeLock(file) {
@@ -376,7 +400,7 @@ export function takeLock(file) {
       } catch {
         /* Unreadable: treated as abandoned. */
       }
-      if (holder?.pid && alive(holder.pid)) return false;
+      if (holderRunning(holder)) return false;
       rmSync(file, { force: true });
     }
   }
@@ -410,7 +434,10 @@ async function worker(canvasDir) {
           rmSync(againFile(canvasDir), { force: true });
           await new Promise((resolve) => setTimeout(resolve, Number(process.env.CANVAS_RECAPTURE_QUIET_MS ?? QUIET_MS)));
         } while (existsSync(againFile(canvasDir)));
-        await recaptureWhere(canvasDir, say, { pick: (plan, open) => open.has(plan.slug) });
+        const { failed } = await recaptureWhere(canvasDir, say, { pick: (plan, open) => open.has(plan.slug) });
+        /* Nothing answered, or a capture failed: the frames are still out of date, so the next turn's end tries again even when
+           it changed nothing. A run that worked leaves the fingerprint, and an unchanged turn after it starts nothing. */
+        if (failed) rmSync(inputsFile(canvasDir), { force: true });
       }
     } finally {
       rmSync(lockFile(canvasDir), { force: true });

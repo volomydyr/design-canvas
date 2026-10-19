@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 /**
- * design-canvas — build `tool/canvas.css`, the canvas's own stylesheet for a project that has no Tailwind.
+ * design-canvas: build `tool/canvas.css`, the canvas's own stylesheet, which every canvas page imports.
  *
  *   node <skill>/scripts/build-canvas-css.mjs --with <a project that has tailwindcss 3 and postcss installed>
  *
- * The core is styled with Tailwind classes, and a Tailwind project builds them by scanning `design-canvas/`. A project without
- * Tailwind gets this file instead: the same classes, built once here with Tailwind's default theme and its base styles, and imported
- * by the two canvas page stubs (the installer adds the import). Run it after any change to a class in core/ or tool/*.tsx; the
+ * The core is styled with Tailwind classes, built once here with Tailwind's default theme and its base styles into this file, which
+ * the two canvas page stubs import in every project, with or without Tailwind (the installer adds the import). Run it after any change to a class in core/ or tool/*.tsx; the
  * tool suite fails while the shipped file is out of date.
  *
  * DELETE WITH: the design-canvas/ folder's installer.

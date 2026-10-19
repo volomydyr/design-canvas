@@ -391,7 +391,7 @@ export const CanvasSurface = forwardRef<
   return (
     <div
       ref={hostRef}
-      /* The stage is dark grey, not near-black, so light and dark screenshots both read as sitting on it. A literal,
+      /* The stage is dark gray, not near-black, so light and dark screenshots both read as sitting on it. A literal,
          not a host project token: the canvas looks the same in every project (see core/design-tokens.md). */
       /* `select-none`: nothing in the world is text to copy, and a pan must not start a text selection. The comment
          box adds `select-text` back for itself. */

@@ -5,7 +5,7 @@
  *
  * It exists so `./states.ts` is evaluated inside a canvas frame before the page's own components mount, which
  * is the only moment early enough to pin a state: a screen that reads a store into `useState` on mount, or
- * memoises a selector with an empty dependency list, will otherwise render the default while the frame claims a
+ * memoizes a selector with an empty dependency list, will otherwise render the default while the frame claims a
  * special case. It calls the apply again on its first render, because a client-side navigation changes the query
  * without re-evaluating a module.
  *

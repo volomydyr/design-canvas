@@ -250,7 +250,7 @@ needsProject("the capture holds, fails and answers a frame's data, runs frames o
 
   /* A STEP THAT CANNOT BE DONE: listed apart, naming the step, not queued for the second pass, and not on the problem list. */
   assert.match(resultLine(run.out, "stale-step"), /^STEP stale-step\s+step 1 \(click "css=\[data-testid=gone\]"\): no visible element matching css=\[data-testid=gone\]/);
-  assert.match(run.out, /1 FRAME\(S\) WHOSE STEPS COULD NOT BE DONE, not run again/);
+  assert.match(run.out, /1 frame\(s\) whose steps could not be done, not run again/);
   assert.ok(!/stale-step.*second pass queued/.test(run.out), "a stale step is not retried");
   const problems = new Set(run.out.split("\n").map((line) => /^\s+- ([a-zA-Z0-9_-]+):/.exec(line)?.[1]).filter(Boolean));
   assert.ok(problems.has("never-asked"), "a frame that failed its claims is on the problem list");
@@ -457,10 +457,10 @@ needsProject("the broken-shot guard keeps a picture of a page that did not arriv
   const afterBroken = manifestOf(project, "guard");
   assert.equal(shotOf(afterBroken, "flaky").hash, flakyGood.hash, "the picture on the canvas is the one that worked");
   assert.ok(smallOf("flaky").equals(flakySmall), "and so is its small copy: a refused capture leaves both in place");
-  assert.match(broken.out, /hold flaky\s+.*looks like a page that did not arrive \(sparse: true says the page is meant to be this small\) — second pass queued/s);
+  assert.match(broken.out, /hold flaky\s+.*looks like a page that did not arrive \(sparse: true says the page is meant to be this small\), second pass queued/s);
   assert.match(broken.out, /a picture of \d+kb where the last one was \d+kb, from a page with \d+ characters? of text: it looks like a page that did not arrive/);
   assert.match(broken.out, /KEPT flaky\b/);
-  assert.match(broken.out, /flaky: captured .*on both passes, so the previous picture was KEPT/);
+  assert.match(broken.out, /flaky: captured .*on both passes, so the previous picture was kept/);
   /* sparse says the page IS this empty: the new picture is written. */
   assert.notEqual(shotOf(afterBroken, "flaky-sparse").hash, sparseGood.hash, "a sparse frame is allowed to be small");
   assert.ok(!/KEPT flaky-sparse/.test(broken.out));
@@ -569,7 +569,7 @@ needsProject("a broken image is photographed and named, never sent to a second p
   assert.equal(first.code, 1, first.out);
   const written = shotOf(manifestOf(project, "gallery"), "gallery");
   assert.deepEqual(written.images, { shown: 2, empty: 1, broken: 1 });
-  assert.match(first.out, /1 FRAME\(S\) WITH A BROKEN IMAGE, not run again/);
+  assert.match(first.out, /1 frame\(s\) with a broken image, not run again/);
   assert.match(first.out, /  ! gallery: photographed with 1 of 2 images broken \(http:\/\/127\.0\.0\.1:\d+\/media\/gone\.png\)/);
   assert.ok(!/^\s+- gallery:/m.test(first.out), "not on the problem list");
   assert.ok(!/second pass/.test(first.out), "a dead file is not retried");
@@ -589,7 +589,7 @@ needsProject("a broken image is photographed and named, never sent to a second p
   writeFileSync(manifestFile, JSON.stringify(manifest, null, 2));
   const kept = await capture(project, "gallery", args);
   assert.equal(kept.code, 1, kept.out);
-  assert.match(kept.out, /KEPT gallery\s+1 broken image where the previous picture had 0 \(http:\/\/127\.0\.0\.1:\d+\/media\/gone\.png\) — previous picture left in place/);
+  assert.match(kept.out, /KEPT gallery\s+1 broken image where the previous picture had 0 \(http:\/\/127\.0\.0\.1:\d+\/media\/gone\.png\), previous picture left in place/);
   assert.ok(!/second pass/.test(kept.out), "kept on the first pass: a second one would load the same dead address");
   assert.ok(!/^\s+- gallery:/m.test(kept.out));
   assert.equal(shotOf(manifestOf(project, "gallery"), "gallery").capturedAt, whole.capturedAt, "the better picture stayed");
@@ -798,8 +798,8 @@ needsProject("a frame refused only for an origin keeps its picture at once, with
   assert.equal(second.code, 1, second.out);
   assert.doesNotMatch(second.out, /second pass/, "an origin is measured on the settled page: a second pass would measure the same");
   assert.match(resultLine(second.out, "goals"), /^KEPT goals/);
-  assert.match(second.out, /goals: captured a claim it does not prove, so the previous picture was KEPT/);
-  assert.match(second.out, /origin "No Such Control" \(edge to plain-page\) resolves to exactly one visible place — it resolved to 0/);
+  assert.match(second.out, /goals: captured a claim it does not prove, so the previous picture was kept/);
+  assert.match(second.out, /origin "No Such Control" \(edge to plain-page\) resolves to exactly one visible place, and it resolved to 0/);
 });
 
 needsProject("six lanes by default, eight under capture-run.mjs, and --lanes or CANVAS_LANES still decide", async () => {
@@ -845,7 +845,7 @@ needsProject("a frame whose pinned state no longer exists fails and keeps its pi
   const second = await capture(project, "pins", ["--no-warm", "--all"]);
   assert.equal(second.code, 1, second.out);
   assert.match(resultLine(second.out, "pin-panel"), /^KEPT pin-panel\s+unknown pinned state "gone"/);
-  assert.match(second.out, /pin-panel: its pinned state "gone" is not in design-canvas\/project\/states\.ts, so the page showed the default and the previous picture was KEPT/);
+  assert.match(second.out, /pin-panel: its pinned state "gone" is not in design-canvas\/project\/states\.ts, so the page showed the default and the previous picture was kept/);
   assert.ok(!/second pass queued/.test(second.out), "a state that does not exist is final, never retried");
   assert.ok(readFileSync(file).equals(picture), "the picture of the real state is still on the canvas, byte for byte");
   assert.equal(shotOf(manifestOf(project, "pins"), "pin-panel").hash, createHash("sha256").update(picture).digest("hex").slice(0, 16), "and its manifest entry with it");
@@ -931,7 +931,7 @@ needsProject("an option that redesigns today's screen is listed with what it no 
     writeFileSync(path.join(project.canvas, "settings.json"), `${JSON.stringify({ appUrl: child.url })}\n`);
     const today = screen("goals-today", "/goals");
     const option = { ...screen("goals-plain", "/plain"), kind: undefined, redesigns: "goals-today" };
-    writeFlows(project, { opts: declaration([today], { explorations: [{ id: "goal layout", title: "Goal Layout", note: "Two ways to lay out the goals", original: "goals-today", screens: [option] }] }) });
+    writeFlows(project, { opts: declaration([today], { explorations: [{ id: "goal layout", title: "Goal Layout", note: "Two ways to lay out the goals", original: "goals-today", mode: "simple", screens: [option] }] }) });
     await child.serve("opts", JSON.stringify(dump(project, "opts").json));
 
     /* Today's screen was never captured with its controls: the capture takes it along once, then compares. */
@@ -947,6 +947,42 @@ needsProject("an option that redesigns today's screen is listed with what it no 
     const tail = round.out.slice(round.out.indexOf("this round:"));
     assert.match(tail, /goals-plain against goals-today: "Goals", "New Goal", "Goal Report"\nnext: include this list in the hand-over/);
     assert.ok(!/also capturing/.test(round.out), "once today's controls are on record it is not taken again");
+  } finally {
+    child.stop();
+  }
+});
+
+needsProject("a frame's stamp is what its files were when its capture began, so an edit during the capture leaves it out of date", async () => {
+  const project = makeProject();
+  mkdirSync(path.join(project.dir, "app"), { recursive: true });
+  const file = path.join(project.dir, "app", "total.tsx");
+  writeFileSync(file, "export const Total = () => 'before';\n");
+  const before = createHash("sha256").update(readFileSync(file)).digest("hex").slice(0, 16);
+  writeFlows(project, { stamped: declaration([screen("total-late", "/total", { expect: ["Totals"], expectMissing: "Total: 0", source: ["app/total.tsx"] })]) });
+  const running = capture(project, "stamped", ["--no-warm", "--all"]);
+  /* The page's data takes 4.5 seconds: the file is edited while the capture waits for it. */
+  await new Promise((resolve) => setTimeout(resolve, 2500));
+  writeFileSync(file, "export const Total = () => 'after';\n");
+  const run = await running;
+  assert.equal(run.code, 0, run.out.slice(-1500));
+  assert.equal(shotOf(manifestOf(project, "stamped"), "total-late").stamp.sources["app/total.tsx"], before);
+});
+
+needsProject("a round on a canvas declared a moment ago waits for the server to reload it, rather than calling it another app", async () => {
+  const child = await startChild();
+  try {
+    const project = makeProject();
+    writeFileSync(path.join(project.canvas, "settings.json"), `${JSON.stringify({ appUrl: child.url })}\n`);
+    writeFlows(project, { fresh: declaration([screen("fresh-frame", "/plain")]) });
+    const json = JSON.stringify(dump(project, "fresh").json);
+    /* The server learns the canvas three seconds after the round asks. */
+    const running = runTool(project, "round.mjs", ["--canvas", "fresh", "--no-check"]);
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await child.serve("fresh", json);
+    const round = await running;
+    assert.equal(round.code, 0, round.out);
+    assert.match(round.out, /waiting up to 30 s for it to reload the declaration/);
+    assert.doesNotMatch(round.out, /not this project's dev server/);
   } finally {
     child.stop();
   }

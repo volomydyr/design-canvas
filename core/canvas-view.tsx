@@ -1442,7 +1442,7 @@ export function CanvasView({
         </button>
         <button
           type="button"
-          title="Fit Everything"
+          title="Fit everything"
           className={cn(BAR_ITEM, "px-2", BAR_QUIET, "tabular-nums")}
           onClick={() => surface.current?.frame(layout.box)}
         >

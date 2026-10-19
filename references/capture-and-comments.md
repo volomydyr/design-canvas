@@ -5,17 +5,17 @@ nobody simplifies a step whose reason is not obvious.
 
 ---
 
-# The capture pipeline
+## The capture pipeline
 
 The whole difficulty is when to press the shutter. A page photographed a moment too early is half loaded; a page caught
 mid-animation is a design that never existed; and either one on a canvas is a lie the reviewer cannot detect.
 
-## Where the list of screens comes from
+### Where the list of screens comes from
 
 From the declaration file, `project/flows.ts`, read in process by `screensFor` in `dump-screens.mjs` (bundled with
 esbuild, variants expanded). No server is needed to know which screens exist, and a stale snapshot cannot exist.
 
-## Which server: the dev server for a round, a build to prove a canvas
+### Which server: the dev server for a round, a build to prove a canvas
 
 - **`round.mjs` captures against the dev server already running at `appUrl`.** That is what makes a round take seconds,
   and it is the normal loop. When nothing answers at the address, the round, `capture.mjs` and `check-canvas.mjs` each
@@ -51,14 +51,14 @@ Two things that bite:
 
 And capture on a quiet tree: a dev server recompiling under another agent's edits returns blank pages (trap 9).
 
-## Before the pipeline: the declaration is checked, the comments are placed
+### Before the pipeline: the declaration is checked, the comments are placed
 
 Before any browser exists, every screen's steps and network rules are validated (an unknown step type throws with the
 screen and the position, exit 2), and comment integrity runs (`comment-integrity.mjs`): a frame that left the declaration
 takes its live comments to the successor the declaration names, or the run is refused with the frame and the ids named and
 nothing touched. See `references/declaration.md`, "A frame that leaves".
 
-## What must be true before the shutter, in order
+### What must be true before the shutter, in order
 
 0. **Done.** The screen's `steps` are pressed (`steps.mjs`, shared with the oracle's Open pass) and the page is given the
    settling it got on load. Everything below is about the page after them.
@@ -88,7 +88,7 @@ nothing touched. See `references/declaration.md`, "A frame that leaves".
    each, so a surface that mounts between two shots is drawn finished. A page still loading or moving cannot produce the
    same bytes twice. `animated: true` accepts one shot.
 
-## How big the picture is
+### How big the picture is
 
 Decided by the page. The height is the taller of what the window scrolls and what the page's main inner scroller hides;
 above 1.1 viewports the whole page is captured, capped at 8000px, otherwise one screen. `oneViewport: true` declines the
@@ -96,14 +96,14 @@ inner-scroller growth. A long shot whose deepest visible element sits within one
 canvas draws each frame at the size it was captured at, and zoomed out it draws the quarter-scale copy in `small/` while
 that copy has at least as many pixels as the frame takes on screen.
 
-## A run
+### A run
 
 - **Lanes.** Six frames at a time in one browser, eight under `capture-run.mjs`. `--lanes <n>` (1 to 16, or
   `CANVAS_LANES`; `round.mjs` and `capture-run.mjs` pass it on) runs fewer for a dev server that cannot carry six pages.
   Every frame proves itself on its own, so the number changes how long a run takes and nothing it says.
 - **A second pass, alone.** A frame that fails in the lanes is shot again by itself after the lanes drain, and the run
   names the frames that needed it. A frame refused only for an edge origin keeps its previous picture at once.
-- **Final failures are not retried**: a step that cannot be done (listed apart as `FRAME(S) WHOSE STEPS COULD NOT BE DONE`)
+- **Final failures are not retried**: a step that cannot be done (listed apart as `frame(s) whose steps could not be done`)
   and an image that finished failing (`images.broken`, a dead file).
 - **A failed shot never replaces a picture that worked.** If it fails the second pass too, the previous picture and its
   manifest entry are kept and the run says so. A screen with no previous picture is written anyway, with the failure
@@ -116,7 +116,7 @@ that copy has at least as many pixels as the frame takes on screen.
   the wait that made it slow.
 - **`--only <id>,<id>`** recaptures named screens and merges the manifest rather than replacing it.
 
-## Login, sessions and browsers
+### Login, sessions and browsers
 
 - **A saved session.** The capture browser is a fresh profile, so an app behind a login photographs its sign-in page. The
   user logs in once, by hand: `npx playwright open --save-storage=design-canvas/auth-state.json <app url>`. Every tool then reads it from `storageState` in
@@ -137,7 +137,7 @@ that copy has at least as many pixels as the frame takes on screen.
 
 The oracle reads the same settings and variables as the capture, so one project setting serves both.
 
-## Recapturing after a change
+### Recapturing after a change
 
 Changed-only is the default; `--all` captures everything. Recapturing everything marks every comment on the canvas stale,
 which moves answered work back into the reviewer's queue.
@@ -153,7 +153,7 @@ says so in under a second.
 Two things keep it honest. `check-canvas.mjs` re-hashes the same stamp and counts the shots older than their files in one
 note. And every capture, a changed-only one included, prunes the shots of screens no longer declared and says which.
 
-## When the pictures are recaptured
+### When the pictures are recaptured
 
 Recapturing every out-of-date frame after every turn photographs canvases nobody is looking at. So a recapture runs at
 moments, and takes the frames in focus. With the local hooks answered yes (`install-canvas.mjs --checks yes`):
@@ -173,7 +173,9 @@ moments, and takes the frames in focus. With the local hooks answered yes (`inst
 
 **Which canvases are open.** While its tab is visible, the canvas page reports the canvas, tab, device and the frames on
 screen (on opening, when that changes, and once a minute); a hidden tab reports that it is gone, and a report counts for
-2 minutes (`design-canvas/rounds/viewing.json`). Two open tabs both count. An automated browser never reports. The frames
+2 minutes (`design-canvas/rounds/viewing.json`). Two open tabs both count. An automated browser never reports, and neither
+does a page an agent opens in a real browser with `?agent=1` added to the canvas address, for the rest of that visit; such a
+page never counts as the reviewer's first visit either. The frames
 on screen are captured first (`capture.mjs --first`), then the rest of that canvas; more than 10 frames run 2 at a time.
 
 **Everything else stays out of date quietly.** The end of a turn shows one line with the count per canvas that is not
@@ -183,7 +185,7 @@ Every `capture.mjs` holds a lock per canvas, so a round and a refresh of one can
 No server answering, no `appUrl`, or a declaration that cannot be read: one line in `design-canvas/rounds/recapture-log.txt`,
 and the frames stay out of date for the next moment.
 
-## The manifest is the receipt
+### The manifest is the receipt
 
 Chromium's `Page.captureScreenshot` over CDP, WebP at quality 92, with a quarter-scale copy in `small/`.
 
@@ -228,7 +230,7 @@ When a pull, merge or rebase run by the agent brings the developers' commits to 
 the pulled commit after the command and says so in one line; the designer's own commits never move it. For commits that
 arrived another way, `parity.mjs --canvas <slug> --exploration <id> --base <commit>` moves it by hand.
 
-## The oracle's live Open pass
+### The oracle's live Open pass
 
 Every frame's Open button is re-proved on the served app, and each visit asks the dev server to compile a route, so by
 default the pass visits only the frames the capture re-photographed since their last clean live visit (the capture writes
@@ -236,7 +238,7 @@ them to `design-canvas/rounds/<slug>/live-unproven.json`; a clean visit takes a 
 `--live-all` visits every frame, for proving a whole canvas. It says how many it left alone. Never restart the reviewer's
 dev server to clear its memory: a restart breaks the hot reload of the tab they are looking at.
 
-## A native app: the iOS Simulator
+### A native app: the iOS Simulator
 
 For a React Native or Expo project the web target photographs the wrong thing: bottom sheets, safe areas and the keyboard
 are absent or different. `capture-sim.mjs --canvas <slug> --scheme <app-url-scheme>` photographs the app running in the iOS
@@ -246,7 +248,7 @@ frame says so (`backend: "simulator"`, `claimsVerified: false`), so check them b
 
 ---
 
-# The comment layer
+## The comment layer
 
 Drag a rectangle on a frame, type, save. Two artifacts, and the second one is the point:
 
@@ -269,6 +271,14 @@ The comments folder is gitignored, and the Hand Off panel says so.
 for a design note: the screenshot with the outline drawn on it. The PNG is drawn in the browser in a `<canvas>`, which is
 why the tool must be served from the app's own origin: a cross-origin image would taint it.
 
+**The routes answer only this machine.** The comments and shots routes answer a request whose `Host` is a loopback name or
+address (`localhost`, `*.localhost`, `127.x.x.x`, `[::1]`) or the host of `appUrl` in `design-canvas/settings.json`, so a
+hostile domain that resolves to this machine (DNS rebinding) reads and writes nothing. A write also needs a browser's
+`Origin` to be that host and `Sec-Fetch-Site`, when sent, to say same-origin; its body is JSON and bounded, its note is
+text, and its frame is one the canvas has a picture of. Tools send neither header and talk to the app's own address. A
+published build answers reads anywhere and refuses every write. To review from another device on the network, set
+`appUrl` to the address that device uses.
+
 **An id names one comment for ever.** The file carries `maxId`, the highest number it ever issued; the next id is the
 larger of that and the highest live id, plus one (trap 29).
 
@@ -281,7 +291,10 @@ re-exports. The capture's stamp keeps the plain walk, because importing from a b
 works per frame, not per box. `drain.mjs --list` prints these lines under each open note.
 
 **Consumed is a separate axis from resolved.** An agent marks a comment consumed with `drain.mjs` (the route's `PATCH`
-with `{ id, consumed: true }`); `--answer "…"` also writes an answer onto it, drawn under the note in the open pin. A
+with `{ id, consumed: true }`); `--answer-file <path>` (or `-` for stdin) also writes an answer onto it, drawn under the
+note in the open pin. The answer goes through a file, never inside the command line, where its quotes or `$(` would be run by
+the shell. A worked note is the reviewer's to close from then on: its pin offers Approve and Dismiss, and the comments queue
+counts it, whether or not its recapture changed the picture. A
 PATCH of an id that is not on the canvas is refused with 404, naming the canvas it looked in (trap 20). The layer has no
 statuses, severities, accounts or mentions, and adding them is how it becomes heavy.
 

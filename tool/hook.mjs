@@ -12,13 +12,22 @@
  *                                       transcript shows no load of the skill. It never denies, asks or changes the command.
  *                                       THE OVERLAY (`overlay.mjs`), when the command runs git: files that gained local lines are
  *                                       registered with the filter before git reads them. Where the project's git hooks live in its
- *                                       own folder, a push that carries canvas code is denied here, with one line per file: the
- *                                       only deny this hook ever prints for a Bash command.
+ *                                       own folder, a push that carries canvas code is denied here, with one line per file.
+ *                                       THE PARITY RECORDS EARLY WARNING: a command that writes the parity exceptions file, or
+ *                                       writes mode: "simple" into the declaration, is denied with one line (`parityGuard`); the
+ *                                       control is the check in parity.mjs. These are the only denies this hook prints for Bash.
  *   PostToolUse, Bash                   THE OVERLAY, after a git command: local lines that no longer fit the updated files, and the
  *                                       hand-off list taken out of the code at a push, as context for the agent to act on and show.
- *                                       THE PARITY BASES, after a pull, merge or rebase: an exploration's base moves to the pulled
- *                                       commit when that commit changed its files (`followRemote` in parity.mjs), one line each.
- *   PreToolUse, Write, Edit, MultiEdit  THE REUSE CHECKS (`checks.mjs`). A refused edit prints
+ *                                       THE PARITY BASES, after any git command, and before a canvas command that runs the parity
+ *                                       check: an exploration's base moves to the developers' newest commit when commits fetched
+ *                                       from a remote changed its files since the base, however they arrived (a pull through the
+ *                                       agent, a terminal or an editor, a merge finished with git commit, a reset). One line each.
+ *   PostToolUse, Write, Edit, MultiEdit THE OVERLAY: the edited file is registered and re-staged when only its local lines changed,
+ *                                       so git does not call it modified and a pull from a terminal right after it goes through.
+ *   PreToolUse, Write, Edit, MultiEdit  THE PARITY RECORDS EARLY WARNING, always: an edit that adds a removal or simple-mode
+ *                                       entry not recorded by parity.mjs, or a mode: "simple" line to the declaration, is denied
+ *                                       with one line. The control is the check in parity.mjs, which refuses such an entry.
+ *                                       THE REUSE CHECKS (`checks.mjs`). A refused edit prints
  *                                       {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",...}}
  *                                       and the agent reads the reason and edits again; an allowed one prints nothing.
  *   Stop                                THE RECAPTURE. Runs `recapture.mjs --hook`: when the turn changed what the pictures are
@@ -45,7 +54,7 @@
  * DELETE WITH: the design-canvas/ folder.
  */
 import { spawnSync } from "node:child_process";
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, statSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -86,10 +95,15 @@ function transcriptShowsSkill(file, skillLoadedIn) {
 }
 
 async function remind(input) {
-  const { beforeAction, canvasCommandsIn, skillLoadedIn } = await import("./reminders.mjs");
-  const command = input.tool_input?.command;
-  if (typeof command !== "string" || canvasCommandsIn(command).length === 0) return null;
-  return beforeAction(input, { skillLoaded: transcriptShowsSkill(input.transcript_path, skillLoadedIn) }) || null;
+  try {
+    const { beforeAction, canvasCommandsIn, skillLoadedIn } = await import("./reminders.mjs");
+    const command = input.tool_input?.command;
+    if (typeof command !== "string" || canvasCommandsIn(command).length === 0) return null;
+    return beforeAction(input, { skillLoaded: transcriptShowsSkill(input.transcript_path, skillLoadedIn) }) || null;
+  } catch {
+    /* A missing or broken reminders file never stops the overlay's push check below. */
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ the overlay */
@@ -105,32 +119,239 @@ async function overlay(input) {
   }
 }
 
-/* A git command that can bring the developers' commits into this checkout. */
-const BRINGS_COMMITS = /\bgit\b[^|;&]*\b(?:pull|merge|rebase)\b/;
+/* ------------------------------------------------------------------ the parity bases */
+
+const gitLines = (args) => {
+  const run = spawnSync("git", ["-C", ROOT, ...args], { encoding: "utf8", maxBuffer: 1 << 28 });
+  return run.status === 0 ? run.stdout.split("\n").filter(Boolean) : null;
+};
+const revs = (args) => gitLines(["rev-list", ...args]) ?? [];
 
 /**
- * The parity bases follow a pull (`followRemote` in parity.mjs): before the command the commit checked out is noted, after it
- * the bases whose files the pulled commits changed move to the pulled commit, one line each.
+ * The values a fetch, a pull or a clone wrote into the remote-tracking refs' logs: what the remote had when this clone last asked it.
+ * A push writes there too, and is left out, so the designer's own pushed commits are not taken for the developers'. Null when the refs
+ * keep no log (then every remote-tracking commit counts).
  */
-async function followBases(input, event) {
-  try {
-    if (!BRINGS_COMMITS.test(String(input.tool_input?.command ?? ""))) return null;
-    const { followRemote, rememberHead, takeHead } = await import("./parity.mjs");
-    if (event === "PreToolUse") {
-      rememberHead({ root: ROOT, canvasDir: CANVAS_DIR });
-      return null;
+function fetchedTips() {
+  const tips = new Set();
+  let logged = false;
+  for (const ref of gitLines(["for-each-ref", "--format=%(refname)", "refs/remotes"]) ?? []) {
+    for (const line of gitLines(["log", "-g", "--format=%H%x09%gs", ref, "--"]) ?? []) {
+      logged = true;
+      const [sha, subject = ""] = line.split("\t");
+      if (/^(?:fetch|pull|clone)\b/.test(subject)) tips.add(sha);
     }
-    const lines = await followRemote({ root: ROOT, canvasDir: CANVAS_DIR, before: takeHead(CANVAS_DIR) });
+  }
+  return logged ? [...tips] : null;
+}
+
+/**
+ * THE BASES FOLLOW THE DEVELOPERS, however their commits arrived. For each exploration's base: the commits checked out now that the
+ * base does not have and that a fetch brought (this clone's own commits, pushed or not, are not among them until the developers build
+ * on them). When any
+ * of them changed the files the base lists, the base moves to the newest of them, so parity compares the option with the developers'
+ * version of those files and never asks for what they removed. Manifests are written under each canvas's capture lock; a canvas whose
+ * capture is running gets the command to move it by hand. Returns one line per base.
+ */
+async function followBases() {
+  const { filesAt, headCommit, readManifest } = await import("./parity.mjs");
+  const head = headCommit(ROOT);
+  if (!head) return [];
+  let slugs = [];
+  try {
+    slugs = readdirSync(path.join(CANVAS_DIR, "shots"), { withFileTypes: true }).filter((one) => one.isDirectory() && !one.name.startsWith("_")).map((one) => one.name);
+  } catch {
+    return [];
+  }
+  const fetched = fetchedTips();
+  const theirsSince = new Map();
+  const theirs = (base) => {
+    if (!theirsSince.has(base)) theirsSince.set(base, new Set(fetched === null ? revs(["--remotes", "--not", base]) : fetched.length > 0 ? revs([...fetched, "--not", base]) : []));
+    return theirsSince.get(base);
+  };
+  const lines = [];
+  const { lockHolder, takeLock } = await import("./recapture.mjs");
+  for (const slug of slugs) {
+    const manifest = readManifest(CANVAS_DIR, slug);
+    const moves = [];
+    for (const [id, record] of Object.entries(manifest.bases ?? {})) {
+      const files = record?.files ?? [];
+      if (typeof record?.commit !== "string" || files.length === 0 || record.commit === head) continue;
+      const brought = theirs(record.commit);
+      if (brought.size === 0) continue;
+      const changed = files.filter((rel) => revs([head, "--not", record.commit, "--", rel]).some((sha) => brought.has(sha)));
+      if (changed.length === 0) continue;
+      const tip = revs(["--topo-order", head, "--not", record.commit]).find((sha) => brought.has(sha));
+      if (tip) moves.push({ id, tip, changed });
+    }
+    if (moves.length === 0) continue;
+    const lock = path.join(CANVAS_DIR, "rounds", slug, "capture.lock");
+    if (!takeLock(lock)) {
+      for (const one of moves)
+        lines.push(
+          `design-canvas: the developers' commits changed files of exploration ${shown(one.id)} on ${named(slug)}, and its base did not move because a capture of ${named(slug)} is running (pid ${Number(lockHolder(lock)) || "unknown"}): ` +
+            (PLAIN.test(slug) && PLAIN.test(one.id) ? `node design-canvas/parity.mjs --canvas ${slug} --exploration ${one.id} --base ${one.tip.slice(0, 12)}` : `move it with parity.mjs --base ${one.tip.slice(0, 12)} once the capture ends`),
+        );
+      continue;
+    }
+    try {
+      const fresh = readManifest(CANVAS_DIR, slug);
+      for (const one of moves) {
+        const record = fresh.bases?.[one.id];
+        if (!record) continue;
+        fresh.bases[one.id] = { ...record, commit: one.tip, files: filesAt(ROOT, record, one.tip), movedAt: new Date().toISOString() };
+        lines.push(`design-canvas: the base of exploration ${shown(one.id)} on ${named(slug)} moved to ${one.tip.slice(0, 12)}, the pulled commit, because it changed ${one.changed.slice(0, 2).map(named).join(", ")}${one.changed.length > 2 ? ` and ${one.changed.length - 2} more` : ""}`);
+      }
+      writeFileSync(path.join(CANVAS_DIR, "shots", slug, "manifest.json"), `${JSON.stringify(fresh, null, 2)}\n`, "utf8");
+    } finally {
+      rmSync(lock, { force: true });
+    }
+  }
+  return lines;
+}
+
+/* Only a plain name (letters, digits, dash, underscore) is ever put into a command line the hook prints. Any other name from a
+   manifest or a path is shown as quoted data. */
+const PLAIN = /^[A-Za-z0-9_-]+$/;
+const shown = (text) => JSON.stringify(String(text).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ").slice(0, 200));
+const named = (text) => (/^[\w./@[\]-]+$/.test(String(text)) ? String(text) : shown(text));
+
+/* A canvas command that runs the parity check: the bases are brought up to date before it. */
+const RUNS_PARITY = /design-canvas\/(?:parity|round|preflight|capture|capture-run|check-canvas)\.mjs\b/;
+
+/** Does this command line run git? Asked of the overlay's parser, which reads the subcommand; a plain word match when it is missing. */
+async function runsGit(command) {
+  try {
+    const { gitCommands } = await import("./overlay.mjs");
+    return gitCommands(command).length > 0;
+  } catch {
+    return /\bgit\b/.test(command);
+  }
+}
+
+/** The bases' lines for this Bash event, or null. Like every branch here, a failure says nothing. */
+async function basesFor(input, event) {
+  try {
+    const command = String(input.tool_input?.command ?? "");
+    const due = event === "PostToolUse" ? await runsGit(command) : RUNS_PARITY.test(command);
+    if (!due) return null;
+    const lines = await followBases();
     return lines.length > 0 ? lines.join("\n") : null;
   } catch {
     return null;
   }
 }
 
+/* ------------------------------------------------------------------ the parity records guard */
+
+const EXCEPTIONS = "design-canvas/project/parity-exceptions.json";
+const MODE_REFUSED =
+  'design-canvas: refused, mode: "simple" turns the parity check off for an exploration, and it needs the reviewer\'s words: record them with node design-canvas/parity.mjs --canvas <slug> --exploration <id> --mode simple --said-file <a file holding them>';
+const WRITTEN_BY_TOOL =
+  "design-canvas: refused, removal and simple-mode entries in design-canvas/project/parity-exceptions.json are written only by node design-canvas/parity.mjs (--remove <file:line> or --mode simple, with --said-file or --said-from), which records the reviewer's words";
+
+/** The tool's records an exceptions file's text holds, or null when the text is not a list. */
+function recordsIn(text, isToolRecord) {
+  try {
+    const list = JSON.parse(text);
+    return Array.isArray(list) ? list.filter(isToolRecord) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The file after a Write, Edit or MultiEdit, or null when it cannot be told. */
+function afterEdit(tool, params, before) {
+  const apply = (text, edit) => {
+    if (typeof edit?.old_string !== "string" || typeof edit?.new_string !== "string") return null;
+    if (edit.old_string === "") return text === "" ? edit.new_string : null;
+    if (!text.includes(edit.old_string)) return null;
+    return edit.replace_all ? text.split(edit.old_string).join(edit.new_string) : text.replace(edit.old_string, () => edit.new_string);
+  };
+  if (tool === "Write") return typeof params.content === "string" ? params.content : null;
+  if (tool === "Edit") return apply(before, params);
+  if (!Array.isArray(params.edits)) return null;
+  let text = before;
+  for (const edit of params.edits) {
+    text = apply(text, edit);
+    if (text === null) return null;
+  }
+  return text;
+}
+
+/** Is the file system under the project case-insensitive (the same folder under another case)? */
+function caseInsensitive() {
+  try {
+    const flipped = ROOT.replace(/[A-Za-z]/g, (ch) => (ch === ch.toLowerCase() ? ch.toUpperCase() : ch.toLowerCase()));
+    return flipped !== ROOT && existsSync(flipped) && statSync(flipped).ino === statSync(ROOT).ino;
+  } catch {
+    return false;
+  }
+}
+
+/** A path inside the project, as git would name it: links resolved, its true case, and folded where the file system ignores case. */
+function projectPath(file) {
+  const resolve = (at) => {
+    try {
+      return realpathSync.native(at);
+    } catch {
+      const parent = path.dirname(at);
+      return parent === at ? at : path.join(resolve(parent), path.basename(at));
+    }
+  };
+  const rel = path.relative(resolve(ROOT), resolve(path.resolve(file))).split(path.sep).join("/");
+  return caseInsensitive() ? rel.toLowerCase() : rel;
+}
+
+/**
+ * AN EARLY WARNING, NOT THE CONTROL. Threat model: only the local agent edits these files through this hook, and it has the
+ * machine's shell, so no refusal here can bind it; the refusal catches a mistaken hand edit early, and the check in parity.mjs
+ * refuses and names any entry it did not record, however it was written. A removal entry or a simple-mode record counts only when parity.mjs wrote it (its `sig`,
+ * checked by `recordProblem` in parity.mjs, which this imports so both judge an entry the same way): a hand edit by any route is
+ * refused by the check itself. This only says so earlier, before an edit or a shell command that would write one by hand, so the
+ * agent does not build on it. A shell command is read by its words, which no filter reads completely. Anything that goes wrong
+ * allows the action.
+ */
+async function parityGuard(input) {
+  try {
+    const { isToolRecord, recordProblem, simpleModeLines } = await import("./parity.mjs");
+    const params = input.tool_input ?? {};
+    if (input.tool_name === "Bash") {
+      const command = String(params.command ?? "");
+      const writes = /(?:^|[^0-9&>])>{1,2}(?!\s*\/dev\/null)|\btee\b|\b(?:sed|perl)\b[^|;&]*\s-i|\b(?:cp|mv|truncate|dd|install|ln)\b|\b(?:node|python3?|ruby|perl|deno|bun|awk)\b/;
+      const parityCommand = /design-canvas\/parity\.mjs\b/.test(command);
+      if (!parityCommand && /parity-exceptions\.json/i.test(command) && writes.test(command)) return WRITTEN_BY_TOOL;
+      if (!parityCommand && /design-canvas\/project\//i.test(command) && simpleModeLines(command) > 0 && writes.test(command)) return MODE_REFUSED;
+      return null;
+    }
+    if (typeof params.file_path !== "string") return null;
+    const rel = projectPath(params.file_path);
+    const folded = caseInsensitive() ? (text) => text.toLowerCase() : (text) => text;
+    if (!rel.startsWith(folded("design-canvas/project/"))) return null;
+    const full = path.resolve(params.file_path);
+    const before = existsSync(full) ? readFileSync(full, "utf8") : "";
+    const after = afterEdit(input.tool_name, params, before);
+    if (after === null) return null;
+    if (rel === folded(EXCEPTIONS)) {
+      const had = new Set((recordsIn(before, isToolRecord) ?? []).map((one) => JSON.stringify(one)));
+      const added = (recordsIn(after, isToolRecord) ?? []).filter((one) => !had.has(JSON.stringify(one)));
+      const bad = added.map(recordProblem).find(Boolean);
+      return bad ? `${WRITTEN_BY_TOOL}: ${bad}` : null;
+    }
+    return simpleModeLines(after) > simpleModeLines(before) ? MODE_REFUSED : null;
+  } catch {
+    return null;
+  }
+}
+
+const deny = (event, reason) => process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: event, permissionDecision: "deny", permissionDecisionReason: reason } }));
+
 /** Bash, before and after: the reminders, the overlay and the parity bases, printed as one hook output. */
 async function bash(input) {
   const event = input.hook_event_name === "PostToolUse" ? "PostToolUse" : "PreToolUse";
   const texts = [];
+  const refused = event === "PreToolUse" ? await parityGuard(input) : null;
+  if (refused) return void deny(event, refused);
   if (event === "PreToolUse") texts.push(await remind(input));
   const found = await overlay(input);
   if (found.deny && event === "PreToolUse") {
@@ -138,7 +359,7 @@ async function bash(input) {
     return;
   }
   texts.push(found.context ?? null);
-  texts.push(await followBases(input, event));
+  texts.push(await basesFor(input, event));
   const text = texts.filter(Boolean).join("\n\n");
   if (text) process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: text } }));
 }
@@ -287,7 +508,13 @@ async function run() {
   }
   const tool = input?.tool_name;
   if (tool === "Bash") return bash(input);
-  if (tool === "Write" || tool === "Edit" || tool === "MultiEdit") return (await checksOn()) ? checkEdit(input) : undefined;
+  if (tool === "Write" || tool === "Edit" || tool === "MultiEdit") {
+    /* After an edit, the overlay alone, whatever the checks answer: it prints nothing. Before one, the reuse checks when they are on. */
+    if (input.hook_event_name === "PostToolUse") return void (await overlay(input));
+    const refused = await parityGuard(input);
+    if (refused) return void deny("PreToolUse", refused);
+    return (await checksOn()) ? checkEdit(input) : undefined;
+  }
   /* The recapture decides and starts its own background run, then returns; its capture output goes to its log. The one thing
      passed on is its line for the person at the screen, and only as the JSON it printed. */
   if (input?.hook_event_name === "Stop" && (await checksOn())) {

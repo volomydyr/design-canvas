@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { framesOnScreen } from "../comments-client";
+import { drivenByTool, framesOnScreen } from "../comments-client";
 import { mayStartRefresh, type ViewingFile, withViewing } from "../comments-route";
 
 /**
@@ -166,5 +166,21 @@ describe("framesOnScreen", () => {
   it("a frame partly on screen counts; an empty or degenerate view lists nothing", () => {
     expect(framesOnScreen(nodes, { x: -50, y: 0, z: 1 }, 100, 100)).toEqual(["left"]);
     expect(framesOnScreen(nodes, { x: 0, y: 0, z: 0 }, 800, 600)).toEqual([]);
+  });
+});
+
+describe("drivenByTool", () => {
+  const store = () => {
+    const kept = new Map<string, string>();
+    return { getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => void kept.set(key, value) };
+  };
+  it("an automated browser, or a page an agent's tools opened with ?agent=1, is no reviewer, for the whole visit", () => {
+    expect(drivenByTool({ webdriver: true }, "", store())).toBe(true);
+    expect(drivenByTool({ webdriver: false }, "", store())).toBe(false);
+    const tab = store();
+    expect(drivenByTool({}, "?canvas=main&agent=1", tab)).toBe(true);
+    /* A later navigation inside the canvas, the parameter gone: still the agent's page. */
+    expect(drivenByTool({}, "?canvas=main", tab)).toBe(true);
+    expect(drivenByTool({}, "?canvas=main", store())).toBe(false);
   });
 });

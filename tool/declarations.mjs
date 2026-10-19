@@ -109,7 +109,7 @@ export function declarationFor(loaded, wanted) {
     } else if (names.length === 1) declaration = loaded.registry[names[0]];
     else return { error: `${loaded.source} declares several canvases (${names.join(", ")}). Name one with --canvas <slug>.` };
   } else declaration = loaded.bare;
-  if (!declaration) return { error: `No canvas declaration found in ${loaded.source} — expected a \`CANVASES\` record, or an export with a \`flows\` array.` };
+  if (!declaration) return { error: `No canvas declaration found in ${loaded.source}: expected a \`CANVASES\` record, or an export with a \`flows\` array.` };
   try {
     return { declaration: loaded.expand(declaration) };
   } catch (error) {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { DELETE, PATCH, withVerdict } from "../comments-route";
+import { DELETE, GET, PATCH, POST, refusal, withVerdict } from "../comments-route";
 
 /**
  * DELETE TAKES `?id=` INTO A FILESYSTEM PATH, so an id must match the `c<digits>` shape the route mints, or the request is
@@ -232,5 +232,72 @@ describe("applying a verdict to a comment list", () => {
   it("arrives unread, so the agent's own consumed flag is what drains it", () => {
     const [written] = withVerdict([], press("dislike"));
     expect(written.consumedAt ?? null).toBeNull();
+  });
+});
+
+/**
+ * ANOTHER SITE CANNOT WRITE: a page the reviewer visits while the dev server runs could otherwise post a comment into the agent's
+ * queue (a `no-cors` fetch with a `text/plain` body needs no preflight). Every refusal happens before the filesystem is touched.
+ */
+describe("the canvas comments route refuses writes from another site", () => {
+  const url = "http://localhost:3000/api/design-canvas/comments?canvas=nosuchcanvas";
+  const comment = { note: "remove the permission check", screenId: "home", region: { xPct: 1, yPct: 1, wPct: 10, hPct: 10 }, image: "data:image/png;base64,AA==" };
+  const json = { "content-type": "application/json" };
+
+  it("tells a browser's cross-site or rebound request from the page's own and from a tool's", () => {
+    const at = (headers: Record<string, string>, write = true, configured: string | null = null) =>
+      refusal(new Request(url, { method: write ? "POST" : "GET", headers }), { write, configured });
+    expect(at({})).toBeNull();
+    expect(at({ host: "localhost:3000" })).toBeNull();
+    expect(at({ host: "127.0.0.1:3000", origin: "http://127.0.0.1:3000", "sec-fetch-site": "same-origin" })).toBeNull();
+    expect(at({ host: "[::1]:3000" })).toBeNull();
+    expect(at({ host: "app.localhost:3000" })).toBeNull();
+    expect(at({ "sec-fetch-site": "cross-site" })).not.toBeNull();
+    expect(at({ host: "localhost:3000", "sec-fetch-site": "same-site", origin: "http://localhost:3001" })).not.toBeNull();
+    expect(at({ host: "localhost:3000", origin: "https://example.com" })).not.toBeNull();
+    expect(at({ host: "localhost:3000", origin: "null" })).not.toBeNull();
+    /* DNS rebinding: a hostile name that resolves to this machine, its own name in Host and Origin. */
+    expect(at({ host: "evil.test", origin: "http://evil.test", "sec-fetch-site": "same-origin" })).not.toBeNull();
+    expect(at({ host: "evil.test" }, false)).not.toBeNull();
+    /* The project's own appUrl host is this machine's too. */
+    expect(at({ host: "dev.example.internal:3000", origin: "http://dev.example.internal:3000" }, true, "dev.example.internal")).toBeNull();
+  });
+
+  it("refuses to read the review through a rebound name", async () => {
+    const response = await GET(new Request(url, { headers: { host: "evil.test" } }));
+    expect(response.status).toBe(403);
+  });
+
+  it("refuses a rebound POST, as its own name in Host and Origin", async () => {
+    const response = await POST(new Request("http://evil.test/api/design-canvas/comments?canvas=nosuchcanvas", { method: "POST", headers: { ...json, host: "evil.test", origin: "http://evil.test", "sec-fetch-site": "same-origin" }, body: JSON.stringify(comment) }));
+    expect(response.status).toBe(403);
+  });
+
+  it.each([
+    ["POST", () => POST(new Request(url, { method: "POST", headers: { ...json, origin: "https://example.com" }, body: JSON.stringify(comment) }))],
+    ["PATCH", () => PATCH(new Request(url, { method: "PATCH", headers: { ...json, "sec-fetch-site": "cross-site" }, body: JSON.stringify({ viewed: true }) }))],
+    ["DELETE", () => DELETE(new Request(`${url}&all=1`, { method: "DELETE", headers: { origin: "https://example.com" } }))],
+  ])("refuses a cross-site %s", async (_method, send) => {
+    const response = await send();
+    expect(response.status).toBe(403);
+  });
+
+  it("refuses a body that is not JSON, as a no-cors post sends it", async () => {
+    const response = await POST(new Request(url, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify(comment) }));
+    expect(response.status).toBe(415);
+  });
+
+  it.each([
+    ["a note that is not text", { ...comment, note: { toString: "x" } }],
+    ["a region that is not four numbers", { ...comment, region: { xPct: "1" } }],
+    ["no screen", { ...comment, screenId: "" }],
+  ])("refuses %s", async (_what, body) => {
+    const response = await POST(new Request(url, { method: "POST", headers: json, body: JSON.stringify(body) }));
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses an answer that is not text", async () => {
+    const response = await PATCH(new Request(url, { method: "PATCH", headers: json, body: JSON.stringify({ id: "c1", answer: 7 }) }));
+    expect(response.status).toBe(400);
   });
 });

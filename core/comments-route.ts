@@ -11,7 +11,7 @@
  * Generic: no knowledge of what the canvas is showing. The whole file goes with the folder.
  */
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import {
   closeSync,
   existsSync,
@@ -316,6 +316,21 @@ const alive = (pid: number) => {
     return false;
   }
 };
+/**
+ * The process that wrote a lock or a start record is still that process: alive, and started before the record was written. A
+ * record outlives a crash or a reboot, after which its pid soon belongs to another process (`holderRunning` in recapture.mjs).
+ */
+const running = (record: { pid?: unknown; at?: unknown } | null): boolean => {
+  if (!record || typeof record.pid !== "number" || !alive(record.pid)) return false;
+  const at = Date.parse(String(record.at));
+  if (!Number.isFinite(at)) return true;
+  try {
+    const started = Date.parse(execFileSync("ps", ["-o", "lstart=", "-p", String(record.pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim());
+    return !Number.isFinite(started) || started <= at + 2000;
+  } catch {
+    return true;
+  }
+};
 const readJson = <T,>(file: string): T | null => {
   try {
     return JSON.parse(readFileSync(file, "utf8")) as T;
@@ -343,12 +358,15 @@ function recordViewing(slug: string, report: ViewingReport): { status: number; e
   writeFileSync(file, `${JSON.stringify(next.file, null, 2)}\n`);
   const script = path.join(dir, "recapture.mjs");
   const started = path.join(dir, "rounds", slug, "opened.json");
+  const last = readJson<{ pid?: number; at?: string }>(started);
+  const lock = readJson<{ pid?: number; at?: string }>(path.join(dir, "rounds", slug, "capture.lock"));
   if (
     next.opened &&
     existsSync(script) &&
     mayStartRefresh({
-      last: readJson<{ pid?: number; at?: string }>(started),
-      captureHolder: readJson<{ pid?: number }>(path.join(dir, "rounds", slug, "capture.lock"))?.pid ?? null,
+      /* A record whose pid now belongs to another process is a refresh that ended. */
+      last: last && !running(last) ? { at: last.at } : last,
+      captureHolder: running(lock) ? (lock?.pid ?? null) : null,
       now: Date.now(),
       alive,
     })
@@ -367,6 +385,93 @@ function recordViewing(slug: string, report: ViewingReport): { status: number; e
   return { status: 200 };
 }
 
+/**
+ * THE REVIEW ANSWERS ONLY THIS MACHINE, AND A WRITE COMES ONLY FROM THE CANVAS PAGE OR A TOOL.
+ *
+ * Any page the reviewer visits while the dev server runs can send requests here: a form or a `no-cors` fetch needs no preflight,
+ * and a hostile domain that resolves to 127.0.0.1 (DNS rebinding) makes its requests look same-origin, with its own name in both
+ * `Host` and `Origin`. So a request is answered only when its `Host` is a loopback name or address (`localhost`, `*.localhost`,
+ * `127.x.x.x`, `[::1]`) or the host of the project's `appUrl` (design-canvas/settings.json), and a write also needs its `Origin`,
+ * when a browser sends one, to be that same host, and `Sec-Fetch-Site`, when sent, to say same-origin. A tool (the capture, the
+ * drain, the round, the oracle) sends neither and talks to the app's own address. Null when the request may go on, else why
+ * not. PURE, and exported for the tests: `configured` is the `appUrl` host.
+ */
+export function refusal(request: Request, { write, configured = null }: { write: boolean; configured?: string | null }): string | null {
+  const hostOf = (value: string | null | undefined): string | null => {
+    if (!value) return null;
+    try {
+      return new URL(value.includes("://") ? value : `http://${value}`).host.toLowerCase();
+    } catch {
+      return null;
+    }
+  };
+  const nameOf = (host: string) => new URL(`http://${host}`).hostname;
+  const host = hostOf(request.headers.get("host") ?? new URL(request.url).host);
+  const allowed = (one: string) => {
+    const name = nameOf(one);
+    return name === "localhost" || name.endsWith(".localhost") || /^127(?:\.\d{1,3}){3}$/.test(name) || name === "[::1]" || (configured !== null && name === configured.toLowerCase());
+  };
+  if (!host || !allowed(host)) return "this canvas answers only on this machine's own address or the project's appUrl";
+  if (!write) return null;
+  const site = request.headers.get("sec-fetch-site");
+  if (site && site !== "same-origin" && site !== "none") return "a write from another site is refused: comments come from the canvas page or a tool";
+  const origin = request.headers.get("origin");
+  if (origin !== null && hostOf(origin) !== host) return "a write from another site is refused: comments come from the canvas page or a tool";
+  return null;
+}
+
+/** The project's `appUrl` host, read per request so a changed setting needs no restart. */
+function configuredHost(): string | null {
+  const settings = readJson<{ appUrl?: unknown }>(path.join(process.cwd(), "design-canvas", "settings.json"));
+  if (typeof settings?.appUrl !== "string") return null;
+  try {
+    return new URL(settings.appUrl).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/** The 403 for a request `refusal` turns away, or null. A published build answers reads anywhere and refuses writes elsewhere. */
+export function guard(request: Request, write: boolean): NextResponse | null {
+  if (CANVAS_PUBLISHED) return null;
+  const why = refusal(request, { write, configured: configuredHost() });
+  return why ? NextResponse.json({ error: why }, { status: 403 }) : null;
+}
+
+/** A comment's picture travels in the body; nothing a reviewer draws comes near this. */
+const MAX_BODY = 25 * 1024 * 1024;
+const MAX_NOTE = 10_000;
+
+/**
+ * The JSON body of a write, or the response refusing it: JSON only (a cross-site form or `text/plain` post is not), and bounded.
+ */
+async function jsonBody<T>(request: Request): Promise<T | NextResponse> {
+  if (!/^application\/json\b/i.test(request.headers.get("content-type") ?? ""))
+    return NextResponse.json({ error: "the body must be application/json" }, { status: 415 });
+  const length = Number(request.headers.get("content-length") ?? 0);
+  if (length > MAX_BODY) return NextResponse.json({ error: "the body is too large" }, { status: 413 });
+  const text = await request.text();
+  if (text.length > MAX_BODY) return NextResponse.json({ error: "the body is too large" }, { status: 413 });
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return NextResponse.json({ error: "the body is not JSON" }, { status: 400 });
+  }
+}
+
+/** A region is four finite percentages. */
+const isRegion = (region: unknown): boolean =>
+  Boolean(region) &&
+  typeof region === "object" &&
+  ["xPct", "yPct", "wPct", "hPct"].every((key) => Number.isFinite((region as Record<string, unknown>)[key]));
+
+/** The frames a canvas has pictures of, or null when it has no manifest to tell. */
+function capturedFrames(slug: string): Set<string> | null {
+  const manifest = readJson<{ shots?: Array<{ screenId?: unknown }> }>(path.join(process.cwd(), "design-canvas", "shots", slug, "manifest.json"));
+  if (!manifest || !Array.isArray(manifest.shots)) return null;
+  return new Set(manifest.shots.map((shot) => shot?.screenId).filter((id): id is string => typeof id === "string"));
+}
+
 /** A function, not a shared constant: a response body can only be read once. */
 const badSlug = () =>
   NextResponse.json(
@@ -376,6 +481,8 @@ const badSlug = () =>
 
 export async function GET(request: Request) {
   if (canvasHidden()) return new NextResponse("Not found", { status: 404 });
+  const refused = guard(request, false);
+  if (refused) return refused;
   const slug = slugOf(request);
   if (!slug) return badSlug();
   return NextResponse.json(await readCommentFile(pathsFor(slug)));
@@ -385,20 +492,27 @@ export async function POST(request: Request) {
   if (canvasHidden()) return new NextResponse("Not found", { status: 404 });
   const published = readOnly();
   if (published) return published;
+  const refused = guard(request, true);
+  if (refused) return refused;
   const slug = slugOf(request);
   if (!slug) return badSlug();
   const paths = pathsFor(slug);
-  const body = (await request.json()) as Partial<CanvasComment> & {
-    image?: string;
-  };
+  const parsed = await jsonBody<Partial<CanvasComment> & { image?: string }>(request);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
   /* Held in constants so the check below still narrows them inside the queued callback. */
   const { note, screenId, region } = body;
-  if (!note || !screenId || !region) {
+  if (typeof note !== "string" || !note.trim() || typeof screenId !== "string" || !screenId || !region) {
     return NextResponse.json(
       { error: "note, screenId and region are required" },
       { status: 400 },
     );
   }
+  if (note.length > MAX_NOTE || screenId.length > 200 || !isRegion(region))
+    return NextResponse.json({ error: "a note is text, a screenId a frame id, and a region four percentages" }, { status: 400 });
+  /* A comment is drawn on a picture, so its frame is one the canvas has a picture of. */
+  const frames = capturedFrames(slug);
+  if (frames && !frames.has(screenId)) return NextResponse.json({ error: `canvas "${slug}" has no picture of "${screenId}"` }, { status: 400 });
   /* Minted inside the queue, so two saves landing together cannot take the same number. */
   let failure: string | null = null;
   const written = await mutate(paths, async (file) => {
@@ -439,10 +553,12 @@ export async function PATCH(request: Request) {
   if (canvasHidden()) return new NextResponse("Not found", { status: 404 });
   const published = readOnly();
   if (published) return published;
+  const refused = guard(request, true);
+  if (refused) return refused;
   const slug = slugOf(request);
   if (!slug) return badSlug();
   const paths = pathsFor(slug);
-  const body = (await request.json()) as {
+  const parsed = await jsonBody<{
     id?: string;
     ids?: string[];
     consumed?: boolean;
@@ -471,7 +587,13 @@ export async function PATCH(request: Request) {
       state?: string | null;
       image?: string;
     };
-  };
+  }>(request);
+  if (parsed instanceof NextResponse) return parsed;
+  const body = parsed;
+  if (body.note !== undefined && (typeof body.note !== "string" || body.note.length > MAX_NOTE))
+    return NextResponse.json({ error: "a note is text" }, { status: 400 });
+  if (body.answer !== undefined && (typeof body.answer !== "string" || body.answer.length > MAX_NOTE))
+    return NextResponse.json({ error: "an answer is text" }, { status: 400 });
 
   if (body.viewing) {
     const recorded = recordViewing(slug, body.viewing);
@@ -662,6 +784,8 @@ export async function DELETE(request: Request) {
   if (canvasHidden()) return new NextResponse("Not found", { status: 404 });
   const published = readOnly();
   if (published) return published;
+  const refused = guard(request, true);
+  if (refused) return refused;
   const slug = slugOf(request);
   if (!slug) return badSlug();
   const paths = pathsFor(slug);

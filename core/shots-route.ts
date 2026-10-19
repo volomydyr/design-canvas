@@ -35,6 +35,7 @@ import {
   screenUrl,
   viewportFor,
 } from "./types";
+import { guard } from "./comments-route";
 import { SYSTEM_ID, type SystemManifest } from "./system";
 import { expandVariants } from "./variants";
 
@@ -159,6 +160,9 @@ export function shotsRoute(declarations: CanvasDeclaration | CanvasRegistry) {
     GET: async (request: Request) => {
       /* Reading is what a deployed canvas is: see `canvasHidden`. */
       if (canvasHidden()) return new NextResponse("Not found", { status: 404 });
+      /* The pictures and the declaration are the review's too: only this machine's own address is answered. */
+      const refused = guard(request, false);
+      if (refused) return refused;
       const params = new URL(request.url).searchParams;
 
       const found = resolve(registry, params.get("canvas"));

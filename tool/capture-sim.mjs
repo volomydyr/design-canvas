@@ -36,7 +36,7 @@ const has = (name) => argv.includes(`--${name}`);
 
 const canvas = argOf("canvas") ?? "main";
 if (!/^[a-z0-9][a-z0-9-]*$/.test(canvas)) {
-  console.error(`refusing --canvas "${canvas}" — a canvas slug is lowercase letters, digits and dashes only.`);
+  console.error(`refusing --canvas "${canvas}": a canvas slug is lowercase letters, digits and dashes only`);
   process.exit(1);
 }
 const scheme = argOf("scheme");
@@ -185,7 +185,7 @@ writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 
 console.log(`\n[capture-sim] ${written.length} frame(s) written to ${path.relative(process.cwd(), shotsDir)}`);
 console.log(
-  "Claims were NOT verified: a screenshot has no DOM to read. Each frame records its declared claims\n" +
+  "Claims were not verified: a screenshot has no DOM to read. Each frame records its declared claims\n" +
     "as claimsDeclared with claimsVerified false; check them by eye against the picture.",
 );
 if (failures.length > 0) {

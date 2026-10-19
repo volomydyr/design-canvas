@@ -15,7 +15,7 @@
  *   1. settings     the app's address, session, browser and login route, read once (`project-settings.mjs`). No default port.
  *   2. declaration  read from the file (`screensFor` in dump-screens.mjs).
  *   3. the server   proved to serve THIS project's declaration: every declared frame must be one the server at that address
- *                   knows. A neighbour's dev server on the next port, or a server that predates the edit, stops the run here.
+ *                   knows. A neighbor's dev server on the next port, or a server that predates the edit, stops the run here.
  *   4. preflight    the copy rules, the declaration lint, the claims against the shipped copy, the comments that would be
  *                   left homeless, the steps, real-code mode's option and parity checks (`parity.mjs`, which runs on its own
  *                   under `--no-preflight`), and (for the frames about to be captured: `--only`, or what `capture.mjs --plan`
@@ -204,14 +204,17 @@ if (unknownOnly.length > 0) die("round", `--only names ${unknownOnly.map((id) =>
     process.exit(2);
   }
   checkFetchedLogin("round", endpoint, response, { storageState, appUrl, loginRoute });
-  if (!response.ok) {
+  /* A 400 is the canvas route saying it has no canvas of this name: a canvas declared a moment ago that the server has not
+     reloaded yet, which the wait below covers exactly as it covers frames it does not serve yet. */
+  const notYet = !response.ok && response.status === 400;
+  if (!response.ok && !notYet) {
     stop("server", 2);
     console.error(`round: ${endpoint} answered ${response.status}. That is either not this project's dev server or not in dev mode; check "appUrl" in design-canvas/settings.json.`);
     console.log(`\n${finalLine()}`);
     process.exit(2);
   }
   const idsIn = async (answer) => new Set(((await answer.json()).screens ?? []).map((screen) => screen.id));
-  const first = await idsIn(response);
+  const first = notYet ? new Set() : await idsIn(response);
   /* A declaration saved a moment ago may not be served yet: wait for the reload, within a bound, before calling it another app. */
   const waitMs = 30_000;
   let unknown = declaredIds.filter((id) => !first.has(id));

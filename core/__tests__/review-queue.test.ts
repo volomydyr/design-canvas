@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { reopenedAfterWork, reviewQueueOn, waitingOn } from "../comments-client";
+import { reopenedAfterWork, reviewable, reviewQueueOn, waitingOn } from "../comments-client";
 import type { CanvasComment } from "../types";
 
 const base: CanvasComment = {
@@ -217,5 +217,22 @@ describe("waitingOn, the counts one canvas shows in the switcher", () => {
   });
   it("counts each frame once although it is drawn in two groups, in the declaration's order", () => {
     expect(waitingOn({ frames, shots, waiting: { c: "new", a: "new", b: "new" }, comments: [] }).fresh).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("reviewable", () => {
+  it("the comments queue holds exactly the notes whose pin offers Approve: a worked note, recaptured or not, answered or not", () => {
+    const frames = [{ screenId: "home", groupId: "Main" }];
+    const at = "2026-01-02T10:00:00.000Z";
+    const base = { flowId: "Main", screenId: "home", label: "home", route: "/", state: null, region: { xPct: 0, yPct: 0, wPct: 1, hPct: 1 }, image: "x.png", note: "n", createdAt: at };
+    const comments = [
+      { ...base, id: "c1", consumedAt: at, stale: true },
+      { ...base, id: "c2", consumedAt: at, stale: false },
+      { ...base, id: "c3", consumedAt: at, answer: { text: "yes", at } },
+      { ...base, id: "c4", consumedAt: null },
+      { ...base, id: "c5", consumedAt: at, kind: "like" as const },
+    ];
+    expect(reviewQueueOn(comments, frames).map((one) => one.id)).toEqual(comments.filter(reviewable).map((one) => one.id));
+    expect(comments.filter(reviewable).map((one) => one.id)).toEqual(["c1", "c2", "c3"]);
   });
 });

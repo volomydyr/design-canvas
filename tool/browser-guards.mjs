@@ -456,7 +456,7 @@ export function forbidRemedy({ appUrl, storageState, hits }) {
   const file = storageState ?? "design-canvas/auth-state.json";
   return [
     `${hits} frame(s) show text this canvas forbids: an overlay from the app is covering the picture. The remedy, in order:`,
-    `  1. Dismiss it ONCE in the capture browser's own origin and save the session again: npx playwright open --save-storage=${file} ${appUrl}`,
+    `  1. Dismiss it one time in the capture browser's own origin and save the session again: npx playwright open --save-storage=${file} ${appUrl}`,
     `  2. Or declare the dismissal in design-canvas/dismiss.json, which the capture and the oracle both read:`,
     `       { "*": [ { "localStorage": { "<the app's dismissal key>": "1" } }, { "click": "<the button's exact name>" } ] }`,
     `  3. Keep the overlay's text in this canvas's \`forbid\` list either way: it is what catches the next campaign the app ships.`,

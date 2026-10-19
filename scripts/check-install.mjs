@@ -37,7 +37,7 @@ import { fileURLToPath } from "node:url";
 import { readAnswer } from "../tool/checks-answer.mjs";
 import { overlayProblems } from "../tool/overlay.mjs";
 import { appDir, askGit, canvasMode, canvasOnlyRootApp, localProblems, sharingProblems, uncommitted, uncommittedNote } from "./ignore-rules.mjs";
-import { CANVAS_CSS, nextMajor, playwrightCommand, STALE_ROOT_APP, usesTailwind } from "./seams.mjs";
+import { buildDirInExport, CANVAS_CSS, esbuildCommand, nextMajor, playwrightCommand, STALE_ROOT_APP, usesTailwind } from "./seams.mjs";
 
 const SKILL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -50,6 +50,27 @@ const CANVAS = path.join(target, "design-canvas");
 
 const failures = [];
 const notes = [];
+
+/** Does this checkout's .claude/settings.local.json run design-canvas/hook.mjs for this event and tool? */
+function hasHookEntry(event, tool) {
+  let hooks = {};
+  try {
+    hooks = JSON.parse(readFileSync(path.join(target, ".claude", "settings.local.json"), "utf8").replace(/^\uFEFF/, ""))?.hooks ?? {};
+  } catch {
+    return false;
+  }
+  const covers = (matcher) => {
+    if (matcher === undefined || matcher === "" || matcher === "*") return true;
+    try {
+      return new RegExp(`^(?:${matcher})$`).test(tool);
+    } catch {
+      return false;
+    }
+  };
+  return (Array.isArray(hooks?.[event]) ? hooks[event] : []).some(
+    (entry) => covers(entry?.matcher) && Array.isArray(entry?.hooks) && entry.hooks.some((hook) => String(hook?.command ?? "").includes("design-canvas/hook.mjs")),
+  );
+}
 
 if (!existsSync(CANVAS)) {
   console.error(`No design-canvas/ in ${target}. Run install-canvas.mjs first.`);
@@ -65,7 +86,7 @@ const shipped = coreFiles(path.join(SKILL, "core"));
 for (const file of shipped) {
   const here = path.join(CANVAS, "core", file);
   if (!existsSync(here)) {
-    failures.push(`core/${file} is missing — rerun install-canvas.mjs`);
+    failures.push(`core/${file} is missing: rerun install-canvas.mjs`);
     continue;
   }
   const mine = createHash("sha256")
@@ -74,10 +95,9 @@ for (const file of shipped) {
   const theirs = createHash("sha256").update(readFileSync(here)).digest("hex");
   if (mine !== theirs) {
     failures.push(
-      `core/${file} has been edited in this project. The canvas has ONE appearance everywhere it is ` +
-        `installed; put project-specific work in design-canvas/project/ and restore this file with ` +
-        `install-canvas.mjs. If the change is a real improvement, make it in the skill so every ` +
-        `project gets it.`,
+      `core/${file} differs from the skill's copy: the project is behind, or the file was edited here. Run ` +
+        `install-canvas.mjs to bring it current. The canvas looks the same in every project, so project-specific work ` +
+        `goes in design-canvas/project/, and an improvement to the core is made in the skill so every project gets it.`,
     );
   }
 }
@@ -92,7 +112,7 @@ for (const file of shipped) {
 if (!existsSync(path.join(CANVAS, "core"))) {
   console.error(
     `no design-canvas/core in ${target}\n\n` +
-      `Either this project has no canvas installed — run the skill's install-canvas.mjs against it — or this is ` +
+      `Either this project has no canvas installed (run the skill's install-canvas.mjs against it), or this is ` +
       `the wrong directory. Point the check at the project root with --target.`,
   );
   process.exit(1);
@@ -103,7 +123,7 @@ const extra = coreFiles(path.join(CANVAS, "core")).filter(
 );
 for (const file of extra)
   failures.push(
-    `core/${file} is not part of the shipped core — the core is generic, project/ is not`,
+    `core/${file} is not part of the shipped core: the core is generic, project/ is not`,
   );
 
 /* ------------------------------------------- 2. the core imports nothing from the project */
@@ -133,7 +153,7 @@ for (const file of shipped.filter((name) => /\.tsx?$/.test(name))) {
     const spec = match[1];
     if (!ALLOWED.some((allowed) => allowed.test(spec)))
       failures.push(
-        `core/${file} imports "${spec}" — the core may not reach into the project`,
+        `core/${file} imports "${spec}", and the core may not reach into the project`,
       );
   }
 }
@@ -144,7 +164,7 @@ for (const file of shipped.filter((name) => /\.tsx?$/.test(name))) {
 const ADAPTER = ["flows.ts", "states.ts", "canvas-state-pin.tsx", "system.tsx"];
 const projectDir = path.join(CANVAS, "project");
 if (!existsSync(path.join(projectDir, "flows.ts")))
-  failures.push("project/flows.ts is missing — it is the only place screens are named");
+  failures.push("project/flows.ts is missing, and it is the only place screens are named");
 else if (
   !/export const CANVASES\b/.test(
     readFileSync(path.join(projectDir, "flows.ts"), "utf8"),
@@ -156,7 +176,7 @@ else if (
      when it happens, and the fix is two lines: keep the declaration, add
      `export const CANVASES = { <slug>: CANVAS }`. */
   failures.push(
-    "project/flows.ts must `export const CANVASES` — the route stubs import that name, and they are shipped",
+    "project/flows.ts must `export const CANVASES`: the route stubs import that name, and they are shipped",
   );
 for (const file of existsSync(projectDir) ? readdirSync(projectDir) : []) {
   /* A canvas may live in its own file under project/canvases/ when a declaration is large; flows.ts is still
@@ -164,7 +184,7 @@ for (const file of existsSync(projectDir) ? readdirSync(projectDir) : []) {
   if (!ADAPTER.includes(file) && file !== "canvases")
     failures.push(
       `project/${file} is not one of the adapter files (${ADAPTER.join(", ")}). The adapter is ` +
-        `the declaration, the state pinning and the pin component — nothing else belongs here.`,
+        `the declaration, the state pinning and the pin component. Nothing else belongs here.`,
     );
 }
 const flows = existsSync(path.join(projectDir, "flows.ts"))
@@ -218,11 +238,18 @@ const nextConfigs = [
 ].map((name) => path.join(target, name));
 const nextConfig = nextConfigs.find((file) => existsSync(file));
 if (nextConfig && existsSync(path.join(target, "design-canvas", "capture-run.mjs"))) {
-  if (!readFileSync(nextConfig, "utf8").includes("CANVAS_BUILD_DIR"))
+  const config = readFileSync(nextConfig, "utf8");
+  if (!config.includes("CANVAS_BUILD_DIR"))
     failures.push(
-      `${path.basename(nextConfig)} does not read CANVAS_BUILD_DIR — add ` +
+      `${path.basename(nextConfig)} does not read CANVAS_BUILD_DIR: add ` +
         `\`distDir: process.env.CANVAS_BUILD_DIR || ".next"\`, or capture-run.mjs will build over .next and ` +
         `stop the dev server mid-review`,
+    );
+  /* The line in another object than the exported config does nothing, and the capture build then overwrites .next. */
+  else if (buildDirInExport(config) === false)
+    failures.push(
+      `${path.basename(nextConfig)} sets distDir from CANVAS_BUILD_DIR outside the config object it exports, so the setting does nothing ` +
+        `and capture-run.mjs will build over .next: move the line into the exported config`,
     );
 }
 
@@ -251,7 +278,13 @@ const tailwindNamesCanvas = () => {
 };
 for (const stub of ["design-canvas/page.tsx", "design-canvas/[canvas]/page.tsx"].map((one) => `${APP}/${one}`)) {
   const at = path.join(target, stub);
-  if (!existsSync(at) || readFileSync(at, "utf8").includes(CANVAS_CSS) || (usesTailwind(target) && tailwindNamesCanvas())) continue;
+  /* An older install's own stylesheet beside the prebuilt one: the prebuilt one is all the canvas needs. */
+  const pageText = existsSync(at) ? readFileSync(at, "utf8") : "";
+  if (pageText.includes(CANVAS_CSS))
+    for (const [line, spec] of pageText.split("\n").map((one, index) => [index + 1, /^\s*import\s+["']([^"']+\.css)["'];?\s*$/.exec(one)?.[1]]))
+      if (spec && !spec.endsWith(CANVAS_CSS))
+        notes.push(`${stub}:${line} imports ${spec} beside the canvas's prebuilt stylesheet, an older install's: the prebuilt one is all the canvas needs, so the import, and any Tailwind setup added only for it, can go`);
+  if (!existsSync(at) || pageText.includes(CANVAS_CSS) || (usesTailwind(target) && tailwindNamesCanvas())) continue;
   failures.push(
     `${stub} does not import the canvas's stylesheet, so the canvas renders unstyled: add ` +
       `import "${path.relative(path.dirname(at), path.join(target, CANVAS_CSS))}"; as its first import`,
@@ -298,10 +331,18 @@ if (asked.git) {
   /* The overlay, asked from inside the project: its filter, its hooks, and nothing unmarked on its way to a commit or a push. */
   const here = process.cwd();
   process.chdir(target);
-  const overlay = overlayProblems();
+  const overlay = overlayProblems({ local: mode.mode === "local" });
   process.chdir(here);
   failures.push(...overlay.failures);
   notes.push(...overlay.notes);
+  /* Where git hooks could not be written, the canvas's Claude Code hook is the only push guard: its entries must be there. */
+  if (overlay.agentGuard)
+    for (const [event, tool] of [["PreToolUse", "Bash"], ["PostToolUse", "Bash"]])
+      if (!hasHookEntry(event, tool))
+        failures.push(
+          `this project's git hooks live in its own folder, so only the canvas's Claude Code hook keeps canvas lines out of a push, and ` +
+            `.claude/settings.local.json has no ${event} entry for design-canvas/hook.mjs that covers ${tool}: run install-canvas.mjs`,
+        );
 } else {
   const gitignore = ignorePatterns(
     existsSync(path.join(target, ".gitignore"))
@@ -326,7 +367,7 @@ if (asked.git) {
   const at = readme.indexOf(marker);
   if (at < 0)
     notes.push(
-      "design-canvas/README.md has no project marker, so a re-install will overwrite it whole — re-run " +
+      "design-canvas/README.md has no project marker, so a re-install will overwrite it whole. Re-run " +
         "install-canvas.mjs to get the marker, then write this project's half under it",
     );
   else if (readme.slice(at).includes("Nothing written here yet"))
@@ -352,7 +393,7 @@ if (asked.git) {
    as a frame that renders the default while claiming a state. */
 if (!flows.includes("state:"))
   notes.push(
-    "no screen declares a state — nothing to pin, and project/states.ts can be deleted",
+    "no screen declares a state, so there is nothing to pin and project/states.ts can be deleted",
   );
 /* A test run in the app must never see a pin: the starter's canvasPinsAllowed() says no under a test runner. */
 {
@@ -384,12 +425,15 @@ if (!flows.includes("state:"))
     ];
     for (const match of imported) {
       if (!existsSync(path.join(CANVAS, match[1])))
-        failures.push(`design-canvas/${name} imports ./${match[1]}, which is not installed — the upgrade is half done: rerun install-canvas.mjs`);
+        failures.push(`design-canvas/${name} imports ./${match[1]}, which is not installed, so the upgrade is half done: rerun install-canvas.mjs`);
     }
   }
   /* The tools import Playwright from design-canvas/, and a project that has only `@playwright/test` (pnpm does not hoist) cannot. */
-  const addPlaywright = playwrightCommand(target);
+  const addPlaywright = playwrightCommand(target, { local: canvasMode(target).mode === "local" });
   if (addPlaywright) failures.push(`playwright does not load from design-canvas/, and every capture needs it: run ${addPlaywright}`);
+  /* The declaration is read from source with esbuild (`declarations.mjs`), so without it no capture, round or check can start. */
+  const addEsbuild = esbuildCommand(target, { local: canvasMode(target).mode === "local" });
+  if (addEsbuild) failures.push(`esbuild does not load from design-canvas/, and every tool that reads the screen list needs it: run ${addEsbuild}`);
   if (!existsSync(path.join(CANVAS, "settings.json")))
     notes.push(
       "no design-canvas/settings.json: every tool (round, preflight, capture, check-canvas, drain, split-canvas) reads the app's " +
@@ -402,8 +446,8 @@ if (!flows.includes("state:"))
  * THE CANVAS'S LOCAL HOOK ENTRIES, when THIS machine said yes to the reuse checks.
  *
  * The answer is kept on the machine, outside every repo (`checks-answer.mjs`), so a clone, a CI run or a teammate who never answered
- * is never judged by somebody else's yes. With a yes, the two entries the installer writes (`design-canvas/hook.mjs`, before a tool
- * and at the end of a turn) must be in THIS checkout's `.claude/settings.local.json`, which a new git worktree does not have, and git
+ * is never judged by somebody else's yes. With a yes, the entries the installer writes (`design-canvas/hook.mjs`, before and after a
+ * tool and at the end of a turn) must be in THIS checkout's `.claude/settings.local.json`, which a new git worktree does not have, and git
  * must ignore that file so they are never committed.
  */
 if (readAnswer(target)?.checksHook === true) {

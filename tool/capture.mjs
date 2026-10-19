@@ -59,7 +59,7 @@ import { recordToday } from "./preflight-rules.mjs";
 import { loadSettings, requireAppUrl } from "./project-settings.mjs";
 import { brokenImagesVerdict, brokenShot, textLength } from "./shot-guard.mjs";
 import { cssLocator, isCssTarget, parseSteps, runSteps, StepError, SURFACE_TEXT } from "./steps.mjs";
-import { CONTROLS, FLAG_PCT, removedControls, removedLines, reportVisualChange } from "./visual-delta.mjs";
+import { CONTROLS, FLAG_PCT, removedControls, removedLines, reportVisualChange, WORDS } from "./visual-delta.mjs";
 import { classifyFrames, nextWaiting, sayFrames } from "./new-frames.mjs";
 import { commentPaths, commitHistory, readCommentFile, writeCommentFile } from "./core/comment-file.mjs";
 import { declStamp, lockHolder, takeLock } from "./recapture.mjs";
@@ -458,8 +458,9 @@ function pruneOrphans() {
 function basesNow() {
   try {
     const next = nextBases({ root: ROOT, previous: previous.bases, explorations: declaration.explorations ?? [], screens: served ?? [] });
-    const { bases, released, kept } = releaseRetired({ root: ROOT, canvasDir: HERE, bases: next });
+    const { bases, released, kept, unchecked } = releaseRetired({ root: ROOT, canvasDir: HERE, slug: canvasSlug, bases: next });
     for (const id of released) console.log(`exploration "${id}": its base is released, because its parity check passes after it was retired`);
+    for (const id of unchecked) console.log(`exploration "${id}": its base is released unchecked, because it was retired and no typescript package is found to check it with`);
     for (const id of kept) console.log(`exploration "${id}" is retired and its parity check does not pass yet: node design-canvas/parity.mjs --canvas ${canvasSlug} says what is lost`);
     for (const [id, record] of Object.entries(bases))
       if (!previous.bases?.[id]) console.log(`exploration "${id}": base recorded at ${record.commit.slice(0, 12)} (${record.files.length} file(s) of "${record.original}", ${record.mode} mode)`);
@@ -484,7 +485,7 @@ const screens = (
   /* A FROZEN screen is preserved history: its state no longer exists in the app, so it is never recaptured once it has a
      picture. See `CanvasScreen.frozen`. */
   if (!s.frozen || !shotOfPrevious.get(s.id)) return true;
-  console.log(`frozen ${s.id.padEnd(28)} preserved history — never recaptured`);
+  console.log(`frozen ${s.id.padEnd(28)} preserved history, never recaptured`);
   return false;
 });
 
@@ -528,7 +529,7 @@ if (changedOnly) {
   console.log(
     `${screens.length} of ${declared.length} screen(s) to capture` +
       (screens.length > 0 ? `: ${screens.map((s) => s.id).join(", ")}` : "") +
-      (screens.length === 0 ? " — nothing they depend on has changed" : ""),
+      (screens.length === 0 ? ": nothing they depend on has changed" : ""),
   );
   if (skipped.length > 0)
     console.log(
@@ -925,6 +926,9 @@ const needsSecondPass = [];
 const provedOnSecondPass = [];
 
 async function captureOne(screen, secondPass = false) {
+  /* What the picture is OF, read before the page loads: an edit that lands while the page renders must leave the frame out of
+     date, never record the new files under the older picture. */
+  const stamp = stampOf(screen);
   const page = await context.newPage();
   /* THE STATES FILE'S OWN WORD that the pinned state does not exist: read beside the pin component's mark, so a project whose pin
      component predates the mark is caught too. */
@@ -1022,7 +1026,7 @@ async function captureOne(screen, secondPass = false) {
     const laidOutAt = await page.evaluate(() => window.innerWidth);
     if (Math.abs(laidOutAt - shotViewport.w) > 24) {
       throw new Error(
-        `laid out at ${laidOutAt}px but its picture is ${shotViewport.w}px wide — the viewport moved under this screen`,
+        `laid out at ${laidOutAt}px but its picture is ${shotViewport.w}px wide, so the viewport moved under this screen`,
       );
     }
     /**
@@ -1098,7 +1102,7 @@ async function captureOne(screen, secondPass = false) {
         });
         await settle(page);
         notes.push(
-          `${screen.id}: a long-page measure revealed no content below one screen — captured one viewport`,
+          `${screen.id}: a long-page measure revealed no content below one screen, so one viewport was captured`,
         );
       }
     }
@@ -1178,6 +1182,12 @@ async function captureOne(screen, secondPass = false) {
       const all = [];
       for (const frame of page.frames()) all.push(...(await frame.evaluate(CONTROLS).catch(() => [])));
       return [...new Set(all)];
+    };
+    /* Every short line it prints: an option's own words, which today's labels are looked for in. */
+    const readWords = async () => {
+      const all = [];
+      for (const frame of page.frames()) all.push(...(await frame.evaluate(WORDS).catch(() => [])));
+      return [...new Set(all)].slice(0, 2000);
     };
     const readWholeDocument = () => readFrames(() => document.body?.innerText ?? "");
 
@@ -1268,6 +1278,7 @@ async function captureOne(screen, secondPass = false) {
        other states' words. */
     const whole_text = await readWholeDocument();
     const controls = await readControls();
+    const words = await readWords();
     for (const absent of screen.expectMissing ?? []) {
       claims.push({
         claim: `nothing saying "${absent}"`,
@@ -1277,7 +1288,7 @@ async function captureOne(screen, secondPass = false) {
     /* Canvas-wide forbidden text, checked on every frame against the whole document: the tripwire for an overlay. */
     for (const banned of declaration.forbid ?? []) {
       claims.push({
-        claim: `nothing saying "${banned}" — text this canvas forbids on every frame`,
+        claim: `nothing saying "${banned}" , text this canvas forbids on every frame`,
         met: !whole_text.includes(banned),
       });
     }
@@ -1381,7 +1392,7 @@ async function captureOne(screen, secondPass = false) {
     const shotAt = await page.evaluate(() => window.innerHeight).catch(() => laidOut.height);
     if (shotAt !== laidOut.height) {
       throw new Error(
-        `laid out ${shotAt}px tall during the shots but its viewport is ${laidOut.height}px — the browser dropped the viewport under the shutter`,
+        `laid out ${shotAt}px tall during the shots but its viewport is ${laidOut.height}px, so the browser dropped the viewport under the shutter`,
       );
     }
 
@@ -1437,7 +1448,7 @@ async function captureOne(screen, secondPass = false) {
         .catch(() => ({ count: 0 }));
       if (found.count !== 1) {
         const miss = {
-          claim: `origin "${wanted_origin.origin}" (edge to ${wanted_origin.to}) resolves to exactly one visible place — it resolved to ${found.count}`,
+          claim: `origin "${wanted_origin.origin}" (edge to ${wanted_origin.to}) resolves to exactly one visible place, and it resolved to ${found.count}`,
           met: false,
         };
         claims.push(miss);
@@ -1450,7 +1461,7 @@ async function captureOne(screen, secondPass = false) {
       const overY = Math.max(0, -found.y) + Math.max(0, found.y + found.h - shotH);
       if (overX > SLACK || overY > SLACK) {
         const miss = {
-          claim: `origin "${wanted_origin.origin}" (edge to ${wanted_origin.to}) sits inside the captured picture — it measured at ${found.x},${found.y} ${found.w}x${found.h} on a ${shotViewport.w}x${shotH} shot`,
+          claim: `origin "${wanted_origin.origin}" (edge to ${wanted_origin.to}) sits inside the captured picture, and it measured at ${found.x},${found.y} ${found.w}x${found.h} on a ${shotViewport.w}x${shotH} shot`,
           met: false,
         };
         claims.push(miss);
@@ -1505,12 +1516,12 @@ async function captureOne(screen, secondPass = false) {
       broken && { reason: broken },
       !screen.brokenImages && unarrived > 0 && {
         reason: `images that never loaded (${unarrived} of ${media.shown})`,
-        line: `${unarrived} of ${media.shown} images on screen never loaded — the picture has holes in it`,
+        line: `${unarrived} of ${media.shown} images on screen never loaded, so the picture has holes in it`,
       },
       worseImages && { reason: worseImages },
       Boolean(screen.brokenImages) && media.shown > 0 && media.empty === 0 && {
-        reason: "no broken image on a screen declared broken — the bug healed",
-        line: "declared broken images and every image loaded — the bug healed, update the declaration",
+        reason: "no broken image on a screen declared broken: the bug healed",
+        line: "declared broken images and every image loaded: the bug healed, so update the declaration",
       },
     ].filter(Boolean);
     const rejected = problems.map((one) => one.reason);
@@ -1519,9 +1530,9 @@ async function captureOne(screen, secondPass = false) {
     if (unknownState) {
       if (keptExists) shots.push(kept);
       failures.push(
-        `${screen.id}: its pinned state "${screen.state}" is not in design-canvas/project/states.ts, so the page showed the default and ${keptExists ? "the previous picture was KEPT" : "no picture was written"}. Add the state, or point the frame at one that exists`,
+        `${screen.id}: its pinned state "${screen.state}" is not in design-canvas/project/states.ts, so the page showed the default and ${keptExists ? "the previous picture was kept" : "no picture was written"}. Add the state, or point the frame at one that exists`,
       );
-      console.log(`${keptExists ? "KEPT" : "FAIL"} ${screen.id.padEnd(28)} unknown pinned state "${screen.state}"${keptExists ? " — previous picture left in place" : ""}`);
+      console.log(`${keptExists ? "KEPT" : "FAIL"} ${screen.id.padEnd(28)} unknown pinned state "${screen.state}"${keptExists ? ", previous picture left in place" : ""}`);
       return;
     }
     const brokenNamed = brokenSources.length > 0 ? ` (${brokenSources.join(", ")}${media.broken > brokenSources.length ? ", ..." : ""})` : "";
@@ -1529,8 +1540,8 @@ async function captureOne(screen, secondPass = false) {
       /* Refused for the broken images alone: final, because a second pass would load the same dead address. */
       if (rejected.length === 1 && worseImages) {
         shots.push(kept);
-        brokenImageFrames.push(`${screen.id}: ${worseImages}${brokenNamed}, so the previous picture was KEPT (restore the file, or declare brokenImages: true if the app really shows it broken)`);
-        console.log(`KEPT ${screen.id.padEnd(28)} ${worseImages}${brokenNamed} — previous picture left in place`);
+        brokenImageFrames.push(`${screen.id}: ${worseImages}${brokenNamed}, so the previous picture was kept (restore the file, or declare brokenImages: true if the app really shows it broken)`);
+        console.log(`KEPT ${screen.id.padEnd(28)} ${worseImages}${brokenNamed}, previous picture left in place`);
         return;
       }
       /* First time round this is not a verdict yet: queued for the quiet pass, and nothing is reported. A frame refused for its
@@ -1540,20 +1551,20 @@ async function captureOne(screen, secondPass = false) {
         needsSecondPass.push(screen);
         shots.push(kept);
         console.log(
-          `hold ${screen.id.padEnd(28)} ${rejected.join(", ")} — second pass queued`,
+          `hold ${screen.id.padEnd(28)} ${rejected.join(", ")}, second pass queued`,
         );
         return;
       }
       shots.push(kept);
       failures.push(
-        `${screen.id}: captured ${rejected.join(" and ")}${secondPass ? " on both passes" : ""}, so the previous picture was KEPT — fix it, then capture this one screen`,
+        `${screen.id}: captured ${rejected.join(" and ")}${secondPass ? " on both passes" : ""}, so the previous picture was kept. Fix it, then capture this one screen`,
       );
       if (missed.length > 0)
         failures.push(
           `${screen.id}: the page does not have ${missed.map((one) => `"${one.claim}"`).join(", ")}`,
         );
       console.log(
-        `KEPT ${screen.id.padEnd(28)} ${rejected.join(", ")} — previous picture left in place`,
+        `KEPT ${screen.id.padEnd(28)} ${rejected.join(", ")}, previous picture left in place`,
       );
       return;
     }
@@ -1591,9 +1602,10 @@ async function captureOne(screen, secondPass = false) {
       /* Animations that never ended and were pinned mid-flight. Zero is the normal answer. */
       pausedMidFlight: stillMoving,
       /* What this picture is OF: selection and the oracle's drift note both read it. */
-      stamp: stampOf(screen),
+      stamp,
       /* What an option is compared with today's screen by (`removedControls` in visual-delta.mjs). */
       controls,
+      words,
       /* Present only when declared: an empty field would say "measured, found none". */
       ...(screen.origins?.length ? { origins } : {}),
       ...(net.rules.length > 0 ? { network: control.report() } : {}),
@@ -1603,7 +1615,7 @@ async function captureOne(screen, secondPass = false) {
     rephotographed.add(screen.id);
 
     const lines = problems.filter((one) => one.line).map((one) => `${screen.id}: ${one.line}`);
-    if (!stable && !screen.animated) lines.splice(missed.length > 0 ? 1 : 0, 0, `${screen.id}: never captured the same picture twice — still moving`);
+    if (!stable && !screen.animated) lines.splice(missed.length > 0 ? 1 : 0, 0, `${screen.id}: never captured the same picture twice, so it is still moving`);
     failures.push(...lines);
     if (stillMoving > 0)
       notes.push(
@@ -1776,12 +1788,12 @@ if (dismissed.size > 0)
    same timeouts or load the same dead address. */
 if (staleSteps.length > 0) {
   console.log(
-    `\n${staleSteps.length} FRAME(S) WHOSE STEPS COULD NOT BE DONE, not run again (the declaration no longer describes the page, or the server was too slow to show the control; capture the frame alone with --only <id> to tell which):`,
+    `\n${staleSteps.length} frame(s) whose steps could not be done, not run again (the declaration no longer describes the page, or the server was too slow to show the control; capture the frame alone with --only <id> to tell which):`,
   );
   for (const line of staleSteps) console.log(`  ! ${line}`);
 }
 if (brokenImageFrames.length > 0) {
-  console.log(`\n${brokenImageFrames.length} FRAME(S) WITH A BROKEN IMAGE, not run again (an image the browser finished loading with nothing in it):`);
+  console.log(`\n${brokenImageFrames.length} frame(s) with a broken image, not run again (an image the browser finished loading with nothing in it):`);
   for (const line of brokenImageFrames) console.log(`  ! ${line}`);
 }
 if (failures.length > 0) {

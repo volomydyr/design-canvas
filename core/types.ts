@@ -224,7 +224,7 @@ export type CanvasScreen = {
   /**
    * This page is genuinely this empty. The capture calls a shot under its blank-page byte floor a failure, because a
    * white screenshot usually means the page never arrived. A few real states are sparser than the floor (a public route
-   * waiting for its ticket is one grey line on white), and this flag says the near-blank picture is the design. The
+   * waiting for its ticket is one gray line on white), and this flag says the near-blank picture is the design. The
    * claims still have to pass, so a page that truly failed to arrive still fails.
    */
   sparse?: boolean;
@@ -646,7 +646,7 @@ export type CanvasEdge = {
   origin?: string;
   /**
    * Why a press edge has no origin, when it genuinely cannot have one. The oracle requires every action edge to carry
-   * `origin` or this field, so a grey press edge is deliberate rather than a gap in the orange coverage. The valid
+   * `origin` or this field, so a gray press edge is deliberate rather than a gap in the orange coverage. The valid
    * reasons: the control lives behind a closed menu, the picture shows the same text twice, the edge leaves an
    * explanation card with no picture, or the source frame is frozen history the capture never re-measures. One short
    * sentence naming which.

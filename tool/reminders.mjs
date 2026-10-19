@@ -49,13 +49,13 @@ const RULES = {
     `check-canvas.mjs once. round.mjs --canvas ${slug} --only <ids> --drain <comment ids> does all of it in one command.`,
   round: () =>
     `Canvas round: --drain names the comments you worked, and a comment that asks something gets its answer in the record ` +
-    `(drain.mjs --answer). After the round, open the contact sheet it prints, read every flagged frame, then report per comment id.`,
+    `(drain.mjs --answer-file <a file holding it>). After the round, open the contact sheet it prints, read every flagged frame, then report per comment id.`,
   "check-canvas": () =>
     `Canvas oracle: run it once per round, after the capture and the drain, not after each fix. Its last line is the verdict: ` +
     `read that line, not the green lines above it.`,
   "comment-patch": (slug) =>
     `Canvas comments: mark worked comments with node design-canvas/drain.mjs --canvas ${slug} --ids c1,c2, which names any id it ` +
-    `cannot find; a comment that asks something gets its answer in the record with --answer.`,
+    `cannot find; a comment that asks something gets its answer in the record with --answer-file <a file holding it>.`,
 };
 RULES["capture-run"] = RULES.capture;
 
@@ -95,7 +95,7 @@ export function afterCapture({ slug, files = [], undrained = [], oracle = true }
   if (undrained.length > 0)
     lines.push(
       `next: ${some(undrained, 8)} ${one ? "sits" : "sit"} on a frame whose picture changed and ${one ? "is" : "are"} not consumed; if you ` +
-        `worked ${one ? "it" : "them"}: node design-canvas/drain.mjs --canvas ${slug} --ids ${undrained.join(",")} (add --answer for a question)`,
+        `worked ${one ? "it" : "them"}: node design-canvas/drain.mjs --canvas ${slug} --ids ${undrained.filter((id) => /^c\d+$/.test(id)).join(",") || "<their ids>"} (add --answer-file <a file holding the answer> for a question)`,
     );
   if (oracle) lines.push(`next: run the oracle once, after the drain: node design-canvas/check-canvas.mjs --canvas ${slug}`);
   return lines;
@@ -109,6 +109,23 @@ export function afterRound({ sheet }) {
 /** The notes a capture leaves waiting on the agent: stale (the picture under them changed) and not consumed. Verdicts never count. */
 export const undrainedIn = (comments) =>
   (comments ?? []).filter((one) => (!one.kind || one.kind === "note") && one.stale === true && !one.consumedAt).map((one) => one.id);
+
+/**
+ * The undrained notes split by what happened: `recaptured` sit on a frame whose picture now on record was taken after the note
+ * was written (its screen was photographed again and the note never marked worked); `inherited` carry the mark with no such
+ * picture, a mark left from before (an older capture, an earlier version of the tool), so nothing says this work touched them.
+ */
+export function undrainedByCause(comments, shots) {
+  const takenAt = new Map((shots ?? []).map((shot) => [shot.screenId, Date.parse(shot.capturedAt ?? "")]));
+  const out = { recaptured: [], inherited: [] };
+  for (const one of comments ?? []) {
+    if (!undrainedIn([one]).length) continue;
+    const taken = takenAt.get(one.screenId);
+    const written = Date.parse(one.editedAt ?? one.createdAt ?? "");
+    (Number.isFinite(taken) && Number.isFinite(written) && taken > written ? out.recaptured : out.inherited).push(one.id);
+  }
+  return out;
+}
 
 /**
  * The one line the end of a turn shows when canvases that are not open hold out-of-date frames, or null. Those frames refresh

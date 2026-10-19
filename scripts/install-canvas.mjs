@@ -26,8 +26,9 @@
  *                                every repo (`checks-answer.mjs`). It is never written into the project.
  *   CLAUDE.md (or AGENTS.md)      the lines for every agent in the project (reuse what exists, record design decisions, grow
  *                                the Design System tab, mark canvas lines and hand-off notes), as one local block (`design-canvas:local
- *                                begin` ... `end`), replaced on every install and never committed. The rest of the file is the
- *                                project's and is never touched. A project with neither gets them printed instead.
+ *                                begin` ... `end`), replaced on every install and never committed; a block an older install
+ *                                committed is updated in place, unwrapped, so the next commit does not delete it for the team. The
+ *                                rest of the file is the project's and is never touched. A project with neither gets them printed.
  *   design-canvas/README.md        the tool's own half, overwritten; everything below the project marker
  *                                near the end of it is the project's own and is kept.
  *   design-canvas/project/*         the adapter, ONLY when it is not there yet. Never overwritten without
@@ -45,7 +46,8 @@
  *                                pre-commit and a pre-push hook chained in front of any the project has. Nothing tracked.
  *   the root layout, the next config, tsconfig.json   the canvas's lines in the project's own files, each marked
  *                                `design-canvas:local` so the overlay keeps it out of every commit (`writeSeams` in seams.mjs). A
- *                                file with no place for a line of its own gets the line printed instead.
+ *                                file with no place for a line of its own gets the line printed instead. An older install's
+ *                                unmarked lines there are marked when they are lines of their own, and named otherwise.
  *   .gitignore                   a shared canvas only: its scratch (comments, session, share pages, rounds), appended when git does
  *                                not ignore it yet, and NEVER written when the project keeps canvas files local through its own
  *                                exclude list: git is asked (`ignore-rules.mjs`), then one line names what to add and where.
@@ -80,7 +82,7 @@ import {
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { readAnswer, realish, writeAnswer } from "../tool/checks-answer.mjs";
+import { readAnswer, writeAnswer } from "../tool/checks-answer.mjs";
 import { appDir, canvasMode, canvasOnlyRootApp, excludeCanvas, optInToSharing, planIgnores } from "./ignore-rules.mjs";
 import { CANVAS_CSS, LOCAL_MARK, playwrightCommand, STALE_ROOT_APP, withCanvasCss, writeSeams } from "./seams.mjs";
 
@@ -122,8 +124,8 @@ if (!existsSync(path.join(target, "package.json"))) {
  *
  * The skill's own `dump-screens.mjs` reads the project's `project/flows.ts` (`--dir`), so the declaration is expanded by the NEW
  * core's variants and judged by the NEW rules in `tool/preflight-rules.mjs`. The rules the project has installed (when it has
- * them) judge the same declaration, so what the upgrade itself breaks can be told from what was already broken: only the first
- * blocks. With no installed rules to compare against, everything the new ones fail counts as new, which is the safe side.
+ * them) judge the same declaration, so what the upgrade itself breaks can be told from what was already broken, and only the
+ * first is the upgrade's to report. With no installed rules to compare against, everything the new ones fail counts as new, which is the safe side.
  *
  * It returns what the new rules fail, split into `fresh` (the upgrade's own) and `known` (already failing), and how many canvases
  * it checked. Nothing here blocks: the install warns and goes ahead. A declaration that cannot be read at all is reported too:
@@ -297,7 +299,7 @@ function putReadme() {
 putReadme();
 
 /**
- * THE SIX LINES EVERY AGENT IN THE PROJECT READS: reuse what exists, follow and record design decisions, grow the
+ * THE FEW LINES EVERY AGENT IN THE PROJECT READS: reuse what exists, follow and record design decisions, grow the
  * Design System tab, load the canvas skill and do what its commands print next. An agent doing UI work never opens this
  * skill or the canvas's README, but it reads the project's own agent file, so that is where these instructions go: the
  * project's CLAUDE.md, else its AGENTS.md, between two markers, replaced on every install, everything else in the file kept.
@@ -313,9 +315,14 @@ const WRAP_CLOSE = `\n<!-- ${LOCAL_MARK} end -->`;
 const agentsBlock = readFileSync(path.join(SKILL, "stubs", "agents-block.md"), "utf8").trim();
 const agentsLocal = `${WRAP_OPEN}${agentsBlock}${WRAP_CLOSE}`;
 const agentsFile = ["CLAUDE.md", "AGENTS.md"].find((one) => existsSync(path.join(target, one)));
+/* An older install committed the block: the committed text is the team's, so it is updated in place, unwrapped, and the change
+   shows in git like any edit of a tracked line. Wrapping it in local lines would make the next commit delete it for everyone. */
+const agentsCommitted =
+  agentsFile !== undefined && (spawnSync("git", ["-C", target, "show", `HEAD:./${agentsFile}`], { encoding: "utf8" }).stdout ?? "").includes(AGENTS_OPEN);
 if (agentsFile) {
   const absolute = path.join(target, agentsFile);
   const existing = readFileSync(absolute, "utf8");
+  const block = agentsCommitted ? agentsBlock : agentsLocal;
   let from = existing.indexOf(AGENTS_OPEN);
   let until = existing.indexOf(AGENTS_CLOSE);
   if (until > from) until += AGENTS_CLOSE.length;
@@ -323,14 +330,14 @@ if (agentsFile) {
   if (until > from && existing.slice(until, until + WRAP_CLOSE.length) === WRAP_CLOSE) until += WRAP_CLOSE.length;
   const next =
     from >= 0 && until > from
-      ? `${existing.slice(0, from)}${agentsLocal}${existing.slice(until)}`
+      ? `${existing.slice(0, from)}${block}${existing.slice(until)}`
       : existing === ""
-        ? `${agentsLocal}\n`
-        : `${existing}${existing.endsWith("\n") ? "" : "\n"}${agentsLocal}\n`;
+        ? `${block}\n`
+        : `${existing}${existing.endsWith("\n") ? "" : "\n"}${block}\n`;
   if (next === existing) kept.push(`${agentsFile} (design system lines already current)`);
   else {
     writeFileSync(absolute, next, "utf8");
-    written.push(`${agentsFile} (the design system lines for agents)`);
+    written.push(`${agentsFile} (the design system lines for agents${agentsCommitted ? ", updated in place: this repository has them committed, so the change shows in git" : ""})`);
   }
 }
 
@@ -508,10 +515,11 @@ ${missingAttributes.join("\n")}
 /**
  * THE CANVAS'S LOCAL HOOKS, AND THE PROOF THEY STAY LOCAL.
  *
- * Three entries in `.claude/settings.local.json`, the one settings file Claude Code keeps out of version control, all running
- * `design-canvas/hook.mjs`: PreToolUse for Bash, Write, Edit and MultiEdit (the reminders before a canvas command, the overlay before
- * a git command, the reuse checks before an edit), PostToolUse for Bash (the overlay after a git command) and Stop (the background
- * recapture). Claude Code keys hooks by event, so one entry cannot serve them all. Whether
+ * Four entries in `.claude/settings.local.json`, the one settings file Claude Code keeps out of version control, all running
+ * `design-canvas/hook.mjs`: PreToolUse for Bash (the reminders before a canvas command, the overlay before a git command, which may
+ * scan a long push, so it gets a minute) and for Write, Edit and MultiEdit (the reuse checks before an edit, ten seconds),
+ * PostToolUse for Bash, Write, Edit and MultiEdit (the overlay and the parity bases after a git command, the overlay after an edit)
+ * and Stop (the background recapture). Claude Code keys hooks by event, so one entry cannot serve them all. Whether
  * the checks and the recapture do anything is this machine's answer (REUSE CHECKS above), read by the hook itself; the reminders
  * always run. Four things keep the entries local rather than assumed to be:
  *
@@ -522,10 +530,9 @@ ${missingAttributes.join("\n")}
  *     hook files an older install wrote are taken out. An empty or whitespace-only file counts as `{}` and a leading byte-order mark
  *     is ignored.
  *   - GIT IS ASKED, NOT TRUSTED. `git check-ignore` says whether the file is ignored here (a global ignore file often already covers
- *     it). When it is not, and this machine's answer is yes, the rule goes into the checkout's exclude list (`git rev-parse --git-path
- *     info/exclude`), never into a tracked .gitignore, and ONLY when that list is inside `--target`; in a linked worktree (whose list
- *     is the main repository's) or a project in a subfolder (whose list is above it) one line says what to add and where. With no yes,
- *     no exclude rule is written and the entries wait for a run where git ignores the file.
+ *     it). When it is not, the rule goes into the repository's exclude list (`git rev-parse --git-path info/exclude`), never into a
+ *     tracked .gitignore, anchored at the project: the same list the canvas's own lines go in (`excludeCanvas`), which no clone
+ *     receives, in a linked worktree and in a project in a subfolder too.
  *   - A FILE THAT CANNOT BE READ IS LEFT ALONE. A settings file that is not valid JSON is somebody's work in progress.
  *
  * A failure exits 1 only when the answer is yes, because then the reuse checks the reviewer asked for are not in place.
@@ -538,16 +545,19 @@ ${missingAttributes.join("\n")}
  */
 const LOCAL_SETTINGS = ".claude/settings.local.json";
 const HOOK_MARK = "design-canvas/hook.mjs";
-/** The hook files an older install wired in one entry each; their entries are replaced by the two above. */
+/** The hook files an older install wired in one entry each; their entries are replaced by the four below. */
 const RETIRED_MARKS = ["design-canvas/checks-hook.mjs", "design-canvas/reminder-hook.mjs", "design-canvas/recapture.mjs"];
 const HOOK_COMMAND =
   `sh -c 'command -v node >/dev/null 2>&1 || exit 0; ` +
   `for d in "$CLAUDE_PROJECT_DIR" "$(git -C "$CLAUDE_PROJECT_DIR" rev-parse --show-toplevel 2>/dev/null)"; do ` +
   `f="$d/${HOOK_MARK}"; if [ -f "$f" ]; then node "$f" 2>/dev/null; exit 0; fi; done; exit 0'`;
 const HOOK_ENTRIES = {
-  PreToolUse: { matcher: "Bash|Write|Edit|MultiEdit", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 10 }] },
-  PostToolUse: { matcher: "Bash", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 10 }] },
-  Stop: { hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 10 }] },
+  PreToolUse: [
+    { matcher: "Bash", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 60 }] },
+    { matcher: "Write|Edit|MultiEdit", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 10 }] },
+  ],
+  PostToolUse: [{ matcher: "Bash|Write|Edit|MultiEdit", hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 60 }] }],
+  Stop: [{ hooks: [{ type: "command", command: HOOK_COMMAND, timeout: 10 }] }],
 };
 const checksLines = [];
 let checksFailed = false;
@@ -605,13 +615,13 @@ function mergeHooks() {
     if (kept.length > 0 || event in HOOK_ENTRIES) next[event] = kept;
     else delete next[event];
   }
-  for (const [event, entry] of Object.entries(HOOK_ENTRIES)) next[event] = [...(next[event] ?? []), entry];
+  for (const [event, entries] of Object.entries(HOOK_ENTRIES)) next[event] = [...(next[event] ?? []), ...entries];
   /* Already exactly this (a second install): nothing to write. */
   return { settings: { ...settings, hooks: next }, unchanged: JSON.stringify(next) === JSON.stringify(hooks) };
 }
 /**
- * Prove git ignores the local settings file; when it does not, add the rule to the exclude list, but only when that list is inside
- * `--target`. Returns null, or the line that says what to do instead.
+ * Prove git ignores the local settings file; when it does not, add the rule to the repository's exclude list. Returns null, or the
+ * line that says what to do instead.
  */
 function ignoreLocalSettings() {
   if (git("check-ignore", "-q", LOCAL_SETTINGS).status === 0) return null;
@@ -620,8 +630,6 @@ function ignoreLocalSettings() {
   const where = git("rev-parse", "--git-path", "info/exclude");
   if (where.status !== 0 || where.stdout.trim() === "") return `git does not ignore ${LOCAL_SETTINGS} and its exclude list could not be found. Add the line ${LOCAL_SETTINGS} to your global git ignore`;
   const exclude = path.resolve(target, where.stdout.trim());
-  if (!realish(exclude).startsWith(realish(target) + path.sep))
-    return `git does not ignore ${LOCAL_SETTINGS}, and the exclude list (${exclude}) is outside ${target}, so nothing was written to it. Add the line ${rule} to that file, or to your global git ignore, so the hook entries are never committed, then run again`;
   try {
     const existing = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
     mkdirSync(path.dirname(exclude), { recursive: true });
@@ -630,7 +638,7 @@ function ignoreLocalSettings() {
     return `git does not ignore ${LOCAL_SETTINGS} and the exclude list (${exclude}) could not be written (${String(error.message).split("\n")[0]}). Add the line ${rule} to it, then run again`;
   }
   if (git("check-ignore", "-q", LOCAL_SETTINGS).status !== 0) return `git still does not ignore ${LOCAL_SETTINGS} after the rule was added to ${exclude}. Add the line ${rule} to your global git ignore`;
-  checksLines.push(`Canvas hooks: ${LOCAL_SETTINGS} was not ignored by git, so the rule is now in ${exclude} (this checkout's own exclude list, nothing tracked).`);
+  checksLines.push(`Canvas hooks: ${LOCAL_SETTINGS} was not ignored by git, so the rule is now in ${exclude} (the repository's own exclude list, nothing tracked).`);
   return null;
 }
 
@@ -639,7 +647,7 @@ function ignoreLocalSettings() {
   if (checksFlag) {
     const recorded = writeAnswer(target, checksFlag === "yes");
     if (!recorded.ok) {
-      checksLines.push(`Reuse checks: the answer was NOT recorded: ${recorded.error}.`);
+      checksLines.push(`Reuse checks: the answer was not recorded: ${recorded.error}.`);
       checksFailed = true;
     }
   }
@@ -650,8 +658,7 @@ function ignoreLocalSettings() {
     why = `${LOCAL_SETTINGS} is tracked by git, so the hooks cannot be added privately (the entries would be committed): untrack that file and run again`;
   const merged = why ? null : mergeHooks();
   if (merged?.why) why = merged.why;
-  if (!why && isGit && git("check-ignore", "-q", LOCAL_SETTINGS).status !== 0)
-    why = answer === true ? ignoreLocalSettings() : `git does not ignore ${LOCAL_SETTINGS}: add it to your global git ignore and run again`;
+  if (!why && isGit && git("check-ignore", "-q", LOCAL_SETTINGS).status !== 0) why = ignoreLocalSettings();
   if (!why && !merged.unchanged) {
     try {
       mkdirSync(path.join(target, ".claude"), { recursive: true });
@@ -662,7 +669,7 @@ function ignoreLocalSettings() {
     }
   }
   if (why) {
-    checksLines.push(`Canvas hooks: NOT added. ${why}.`);
+    checksLines.push(`Canvas hooks: not added. ${why}.`);
     if (answer === true) checksFailed = true;
   }
   if (answer === true && !why) checksLines.unshift("Reuse checks: on for this project, with the background recapture beside them.");
@@ -676,12 +683,21 @@ function ignoreLocalSettings() {
  */
 const seams = writeSeams(target, APP);
 for (const file of seams.written) written.push(`${file} (the canvas's lines, marked ${LOCAL_MARK})`);
+const at = (one) => `${one.file}:${one.line}`;
+const seamLines = [];
+if (seams.marked.length > 0)
+  seamLines.push(`Older lines: an earlier install left ${seams.marked.length} canvas line(s) unmarked; they are marked ${LOCAL_MARK} now, so no commit carries them: ${seams.marked.map(at).join(", ")}.`);
+if (seams.manual.length > 0)
+  seamLines.push(
+    `Older lines to fix by hand: an earlier install's canvas line(s) that change the team's own lines, so they were not marked: ` +
+      `${seams.manual.map((one) => `${at(one)} ${JSON.stringify(one.text.slice(0, 80))}`).join("; ")}. Put the team's version back and add the canvas's part as a marked line of its own, or remove it.`,
+  );
 const overlayLines = [];
 if (mode.mode !== "none") {
   const run = spawnSync(process.execPath, [path.join(target, "design-canvas", "overlay.mjs"), "install"], { cwd: target, encoding: "utf8" });
   if (run.status === 0) overlayLines.push(...run.stdout.split("\n").filter(Boolean));
   else {
-    overlayLines.push(`Overlay: NOT installed (${String(run.stderr || run.stdout).trim().split("\n")[0] || `exit ${run.status}`}), so canvas lines in app files could be committed. Fix it and run again.`);
+    overlayLines.push(`Overlay: not installed (${String(run.stderr || run.stdout).trim().split("\n")[0] || `exit ${run.status}`}), so canvas lines in app files could be committed. Fix it and run again.`);
     process.exitCode = 1;
   }
 }
@@ -689,15 +705,15 @@ if (mode.mode !== "none") {
 console.log(`installed into ${target}\n`);
 for (const file of written) console.log(`  wrote  ${file}`);
 for (const file of kept)
-  console.log(`  kept   ${file} (already there — not overwritten)`);
+  console.log(`  kept   ${file} (already there, not overwritten)`);
 
 if (!agentsFile)
   console.log(`Agent lines: this project has no CLAUDE.md or AGENTS.md, so none was written. Put these lines in the file your agents read:\n\n${agentsLocal}\n`);
 if (staleRootApp) console.log(`Routes: ${STALE_ROOT_APP}.\n`);
-const addPlaywright = playwrightCommand(target);
+const addPlaywright = playwrightCommand(target, { local: mode.mode === "local" });
 if (addPlaywright) console.log(`Playwright: the capture needs it and it does not load from design-canvas/ in this project. Add it with:\n\n  ${addPlaywright}\n`);
-for (const line of [...ignoreLines, ...overlayLines]) console.log(line);
-if (ignoreLines.length + overlayLines.length > 0) console.log("");
+for (const line of [...ignoreLines, ...seamLines, ...overlayLines]) console.log(line);
+if (ignoreLines.length + seamLines.length + overlayLines.length > 0) console.log("");
 for (const line of checksLines) console.log(line);
 if (checksLines.length > 0) console.log("");
 
@@ -707,14 +723,14 @@ Still to do by the agent, because every project does these differently. Each lin
 an added line only, ending in a \`${LOCAL_MARK}\` comment (or inside a \`${LOCAL_MARK} begin\` ... \`end\` block),
 so it stays in this working copy and no commit carries it:
 
-  1. NO APP SHELL. However this project decides a route renders without app chrome, put /design-canvas in
-     it — the whole subtree, so /design-canvas/<slug> is covered too. The canvas is a canvas that imports the
+  1. No app shell. However this project decides a route renders without app chrome, put /design-canvas in
+     it: the whole subtree, so /design-canvas/<slug> is covered too. The canvas is a canvas that imports the
      prototype, not a page of the prototype.
   2. Write design-canvas/project/flows.ts and name every canvas in its \`CANVASES\` record. Until it is real,
-     check-canvas.mjs fails — which is the correct state for a half-written declaration.
+     check-canvas.mjs fails, which is the correct state for a half-written declaration.
 ${seamTodo ? `${seamTodo}\n` : ""}
 The canvas pages import ${CANVAS_CSS}, the canvas's classes prebuilt, so no Tailwind config needs the canvas folder.
-${seams.written.length > 0 ? `The pin component, the capture's build folder and the tsconfig line are in place, marked: ${seams.written.join(", ")}.\n` : ""}
+${seams.written.length > 0 ? `Marked canvas lines written this run: ${seams.written.join(", ")}.\n` : ""}
 Each canvas is addressed by its slug, and the slug namespaces its pictures and its review:
 
   /design-canvas/<slug>                     the canvas
@@ -726,7 +742,7 @@ Then, per canvas:
   node design-canvas/capture-run.mjs --canvas <slug> && node design-canvas/check-canvas.mjs --canvas <slug>
 
 Both default to \`main\`, which is the starter registry's one entry, so a single-canvas project can pass
-nothing. UPGRADING AN EXISTING INSTALL: this installer moves an older flat layout (design-canvas/comments.json,
+nothing. Upgrading an existing install: this installer moves an older flat layout (design-canvas/comments.json,
 design-canvas/shots/) to the namespaced paths once, deleting nothing, and the routes read only the namespaced
 ones. The first capture after that recaptures every screen, because the old manifest is set aside, not reused.
 `);
