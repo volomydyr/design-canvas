@@ -95,4 +95,4 @@ scripts/          the installer, the install check and their helpers
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+PolyForm Shield 1.0.0. Free to use, at work too; not for building a product that competes with it. See [LICENSE](LICENSE).
